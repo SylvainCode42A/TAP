@@ -1,0 +1,126 @@
+world:
+  locations:
+    entrance:
+      name: "Dungeon Entrance"
+      description: "A cold stone archway marks the entrance to the dungeon."
+      exits:
+        north: "corridor"
+        east: "guard_room"
+        south: "secret_cell"
+      spawns:
+        - npc_type: "merchant"
+          count: 1
+
+    corridor:
+      name: "Corridor"
+      description: "A narrow corridor lit by flickering torches."
+      exits:
+        south: "entrance"
+        north: "library"
+      items: ["torch"]
+
+    guard_room:
+      name: "Guard Room"
+      description: "An old guard room with weapon racks along the walls."
+      exits:
+        west: "entrance"
+        east: "armory"
+      items: ["cell_key"]
+
+    library:
+      name: "Library"
+      description: "Dusty shelves filled with forgotten books."
+      exits:
+        south: "corridor"
+        north: "monster_room"
+      items: ["shield"]
+
+    armory:
+      name: "Armory"
+      description: "Racks of rusted weapons line the walls."
+      exits:
+        west: "guard_room"
+        north: "monster_room"
+      items: ["sword"]
+
+    monster_room:
+      name: "Monster Lair"
+      description: "A dark chamber. Something is breathing heavily in the shadows."
+      exits:
+        south: "library"
+        south_alt: "armory"
+        east: "treasure"
+      spawns:
+        - npc_type: "monster"
+          count: 1
+
+    treasure:
+      name: "Treasure Room"
+      description: "Gold and jewels glitter in the torchlight."
+      exits:
+        west: "monster_room"
+
+    secret_cell:
+      name: "Secret Cell"
+      description: "A damp cell hidden behind the entrance."
+      exits:
+        north: "entrance"
+      spawns:
+        - npc_type: "prisoner"
+          count: 1
+
+  items:
+    sword:
+      name: "Sword"
+      description: "A sharp blade, useful before facing the monster."
+      obtainable: true
+
+    cell_key:
+      name: "Cell Key"
+      description: "A rusty key that opens the secret cell."
+      obtainable: true
+
+    torch:
+      name: "Torch"
+      description: "A torch bolted to the wall. Cannot be taken."
+      obtainable: false
+
+    shield:
+      name: "Shield"
+      description: "A worn shield mounted on display. Cannot be taken."
+      obtainable: false
+
+  npcs:
+    merchant:
+      name: "Merchant"
+      description: "A merchant offering advice before the dungeon."
+      dialogue: ["Take a sword before facing the monster!", "Good luck, adventurer."]
+      stats:
+        hp: 10
+
+    prisoner:
+      name: "Prisoner"
+      description: "A prisoner locked behind bars, waiting for rescue."
+      dialogue: ["Free me and I'll show you the way to the treasure!", "Thank you, adventurer!"]
+      stats:
+        hp: 10
+
+    monster:
+      name: "Monster"
+      description: "A fearsome creature guarding the treasure."
+      dialogue: ["Grrrr..."]
+      stats:
+        hp: 20
+
+  quests:
+    free_prisoner:
+      name: "Free the Prisoner"
+      description: "Take the cell key and free the prisoner."
+      objectives: ["Take the cell_key", "Go to the secret_cell", "Talk to the prisoner"]
+      rewards: ["sword"]
+
+    treasure_quest:
+      name: "The Treasure"
+      description: "Defeat the monster and claim the treasure."
+      objectives: ["Defeat the monster", "Take the treasure"]
+      rewards: ["victory"]
