@@ -1,6 +1,40 @@
 use std::net::{TcpListener, TcpStream};
 use std::io::{BufRead, BufReader, Write};
 
+enum Command {
+    Connect { username: String },
+    Look,
+    Move { direction: String },
+    Take { item: String },
+    Drop { item: String },
+    Inventory,
+    Talk { npc: String },
+    Attack { target: String },
+    Status,
+    Quest { quest_id: String },
+    Quests,
+    Who,
+    GroupInvite { username: String },
+    GroupJoin { group_id: String },
+    GroupLeave,
+    ChatGlobal { message: String },
+    ChatRoom { message: String },
+    ChatGroup { message: String },
+    Quit,
+}
+
+enum Response {
+    Ok(String),
+    Err { code: u16, message: String },
+}
+
+//SREZZAQ
+fn dispatch(cmd: Command) -> Response {
+    match cmd {
+        Command::Connect { username } => Response::Ok(format!("{} connected", username)),
+        _ => Response::Err { code: 404, message: "Not implemented yet".to_string() },
+    }
+}
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:7878").expect("Erreur de bind");
@@ -22,13 +56,15 @@ fn handle_(stream: &mut TcpStream) {
             Ok(0) => break,
             Ok(_) => {
                 let mut matched = false;
+                let mut should_quit = false;
+                let mut cmd: Option<Command> = None;
 
                 if line.starts_with("CONNECT") {
                     matched = true;
                     let actions: Vec<&str> = line.split_whitespace().collect();
-                    
                     if actions.len() == 2 {
-                        println!("OK '{}' connected", actions[1]);
+                        cmd = Some(Command::Connect { username: actions[1].to_string() });
+                        //println!("OK '{}' connected", actions[1]);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CONNECT");
@@ -37,6 +73,7 @@ fn handle_(stream: &mut TcpStream) {
 
                 if line.trim() == "LOOK" {
                     matched = true;
+                    cmd = Some(Command::Look);
                     println!("OK json() all info of room, players, next room");
                 }
                 else if line.trim().starts_with("LOOK") {
@@ -49,15 +86,19 @@ fn handle_(stream: &mut TcpStream) {
                     if actions.len() == 2 {
                         let upper = actions[1].trim().to_uppercase();
                         if upper == "NORTH" {
+                            cmd = Some(Command::Move { direction: actions[1].to_string() });
                             println!("OK room = next_is_north");
                         }
                         else if upper == "SOUTH" {
+                            cmd = Some(Command::Move { direction: actions[1].to_string() });
                             println!("OK room = next_is_south");
                         }
                         else if upper == "WEST" {
+                            cmd = Some(Command::Move { direction: actions[1].to_string() });
                             println!("OK room = next_is_west");
                         }
                         else if upper == "EAST" {
+                            cmd = Some(Command::Move { direction: actions[1].to_string() });
                             println!("OK room = next_is_east");
                         }
                         else {
@@ -74,6 +115,7 @@ fn handle_(stream: &mut TcpStream) {
                     let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
                         let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        cmd = Some(Command::Take { item: item.to_string() });
                         println!("OK taken={}", item);
                     }
                     else {
@@ -86,6 +128,7 @@ fn handle_(stream: &mut TcpStream) {
                     let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
                         let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        cmd = Some(Command::Drop { item: item.to_string() });
                         println!("OK dropped={}", item);
                     }
                     else {
@@ -95,6 +138,7 @@ fn handle_(stream: &mut TcpStream) {
 
                 if line.trim() == "INVENTORY" {
                     matched = true;
+                    cmd = Some(Command::Inventory);
                     println!("OK json() of player INVENTORY");
                 }
                 else if line.trim().starts_with("INVENTORY") {
@@ -106,6 +150,7 @@ fn handle_(stream: &mut TcpStream) {
                     let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
                         let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        cmd = Some(Command::Talk { npc: item.to_string() });
                         println!("OK json() of TALK to '{}'", item);
                     }
                     else {
@@ -118,6 +163,7 @@ fn handle_(stream: &mut TcpStream) {
                     let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
                         let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        cmd = Some(Command::Attack { target: item.to_string() });
                         println!("OK json() of ATTACK to player '{}'", item);
                     }
                     else {
@@ -127,6 +173,7 @@ fn handle_(stream: &mut TcpStream) {
 
                 if line.trim() == "STATUS" {
                     matched = true;
+                    cmd = Some(Command::Status);
                     println!("OK json() of health player")
                 }
                 else if line.trim().starts_with("STATUS") {
@@ -137,6 +184,7 @@ fn handle_(stream: &mut TcpStream) {
                     matched = true;
                     let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() == 2 {
+                        cmd = Some(Command::Quest { quest_id: actions[1].to_string() });
                         println!("OK json() of quest '{}'", actions[1]);
                     }
                     else {
@@ -146,6 +194,7 @@ fn handle_(stream: &mut TcpStream) {
 
                 if line.trim() == "QUESTS" {
                     matched = true;
+                    cmd = Some(Command::Quests);
                     println!("OK [all_quests]");
                 }
                 else if line.trim().starts_with("QUESTS") {
@@ -154,6 +203,7 @@ fn handle_(stream: &mut TcpStream) {
 
                 if line.trim() == "WHO" {
                     matched = true;
+                    cmd = Some(Command::Who);
                     println!("OK json() of all players and count");
                 }
                 else if line.trim().starts_with("WHO") {
@@ -164,6 +214,7 @@ fn handle_(stream: &mut TcpStream) {
                     matched = true;
                     let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() == 3 {
+                        cmd = Some(Command::GroupInvite { username: actions[2].to_string() });
                         println!("OK group_invite=pending for player '{}'", actions[2]);
                     }
                     else {
@@ -175,6 +226,7 @@ fn handle_(stream: &mut TcpStream) {
                     matched = true;
                     let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() == 3 {
+                        cmd = Some(Command::GroupJoin { group_id: actions[2].to_string() });
                         println!("OK joined={}", actions[2]);
                     }
                     else {
@@ -184,6 +236,7 @@ fn handle_(stream: &mut TcpStream) {
 
                 if line.trim() == "GROUP LEAVE" {
                     matched = true;
+                    cmd = Some(Command::GroupLeave);
                     println!("OK left_group");
                 }
                 else if line.trim().starts_with("GROUP LEAVE") {
@@ -195,6 +248,7 @@ fn handle_(stream: &mut TcpStream) {
                     let actions: Vec<&str> = line.split_whitespace().collect();
                     if actions.len() > 2 {
                         let rest = actions.into_iter().skip(2).collect::<Vec<&str>>().join(" ");
+                        cmd = Some(Command::ChatGlobal { message: rest.to_string() });
                         println!("OK say '{}' in GLOBAL", rest);
                     }
                     else {
@@ -207,6 +261,7 @@ fn handle_(stream: &mut TcpStream) {
                     let actions: Vec<&str> = line.split_whitespace().collect();
                     if actions.len() > 2 {
                         let rest = actions.into_iter().skip(2).collect::<Vec<&str>>().join(" ");
+                        cmd = Some(Command::ChatRoom { message: rest.to_string() });
                         println!("OK say '{}' in ROOM", rest);
                     }
                     else {
@@ -219,6 +274,7 @@ fn handle_(stream: &mut TcpStream) {
                     let actions: Vec<&str> = line.split_whitespace().collect();
                     if actions.len() > 2 {
                         let rest = actions.into_iter().skip(2).collect::<Vec<&str>>().join(" ");
+                        cmd = Some(Command::ChatGroup { message: rest.to_string() });
                         println!("OK say '{}' in GROUP", rest);
                     }
                     else {
@@ -228,8 +284,9 @@ fn handle_(stream: &mut TcpStream) {
 
                 if line.trim() == "QUIT" {
                     matched = true;
+                    cmd = Some(Command::Quit);
+                    should_quit = true;
                     println!("OK goodbye");
-                    break;
                 }
                 else if line.trim().starts_with("QUIT") {
                     send_error_mess(stream, "401", "Invalid number of arguments for QUIT");
@@ -238,17 +295,36 @@ fn handle_(stream: &mut TcpStream) {
                 if !matched {
                     send_error_mess(stream, "401", "Unknown command");
                 }
-            }
+
+                if let Some(c) = cmd {
+                    let resp = dispatch(c);
+                    match resp {
+                        Response::Ok(msg) => {
+                            let message = format!("OK: {}", msg);
+                            println!("{}", msg);
+                            stream.write_all(message.as_bytes()).expect("Failed to send response");
+                        }
+                        Response::Err { code, message } => {
+                            send_error_mess(stream, &code.to_string(), &message);
+                        }
+                    }
+                }
+
+                if should_quit {
+                    break;
+                }
+            },
 
             Err(e) => {
-                println!("ERR: {}", e);
+                println!("ERRoR: {}", e);
                 break;
-            }
+            },
         }
     }
 }
 
 fn send_error_mess(stream: &mut TcpStream, t_error: &str, error: &str) {
     let message = format!("ERR {} {}\n", t_error, error);
+    println!("{}", message.trim());
     stream.write_all(message.as_bytes()).expect("Failed to send message error");
 }
