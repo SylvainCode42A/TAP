@@ -86,25 +86,56 @@ enum Response {
     Err { code: u16, message: String },
 }
 
-fn load_world() -> World {
-    let content = fs::read_to_string("data/world.yaml").expect("Impossible to read world.yaml");
-    serde_yaml::from_str(&content).expect("Parsing error")
+struct Player {
+    username: String,
+    current_room: String,
+    inventory: Vec<String>,
+    hp: u32,
 }
 
-//SREZZAQ
-fn dispatch(cmd: Command, world: &Arc<Mutex<World>>) -> Response {
+struct GameState {
+    world: World,
+    players: HashMap<String, Player>,
+}
+
+impl World {
+    fn load_world() -> World {
+        let content = fs::read_to_string("data/world.yaml").expect("Impossible to read world.yaml");
+        serde_yaml::from_str(&content).expect("Parsing error")
+    }
+}
+
+fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>) -> Response {
     match cmd {
-        Command::Connect { username } => Response::Ok(format!("{} connected", username)),
+        Command::Connect { username } => {
+            let mut gs = game_state.lock().unwrap();
+            if gs.players.contains_key(&username) {
+                Response::Err { code: 401, message: format!("{} already connected", username) }
+            } else {
+                let player = Player {
+                    username: username.clone(),
+                    current_room: "entrance".to_string(),
+                    inventory: vec![],
+                    hp: 100,
+                };
+                gs.players.insert(username.clone(), player);
+                Response::Ok(format!("{} connected", username))
+            }
+        }
+
         Command::Look => {
-            let w = world.lock().unwrap();
-            if w.world.locations.is_empty() {
+            let gs = game_state.lock().unwrap();
+            if gs.world.world.locations.is_empty() {
                 Response::Err { code: 404, message: "world not init".to_string()}
             } else {
-                Response::Ok(format!("locations_count = {}", w.world.locations.len()))
+                Response::Ok(format!("locations_count = {}", gs.world.world.locations.len()))
             }
         },
+
         Command::Move { direction } => Response::Ok(format!("room=next_is_{}", direction)),
+
         Command::Take { item } => Response::Err { code: 404, message: format!("{} item not found", item) },
+
         Command::Drop { item } => Response::Err { code: 404, message: format!("{} item can't dropped", item) },
         Command::Inventory => Response::Err { code: 404, message: "Inventory not found".to_string() },
         Command::Talk { npc } => Response::Err { code: 404, message: format!("{} not found in room", npc) },
@@ -124,21 +155,26 @@ fn dispatch(cmd: Command, world: &Arc<Mutex<World>>) -> Response {
 }
 
 fn main() {
-    let world = Arc::new(Mutex::new(load_world()));
+    let game_state = GameState {
+        world: World::load_world(),
+        players: HashMap::new(),
+    };
+
+    let game_state = Arc::new(Mutex::new(game_state));
 
     let listener = TcpListener::bind("127.0.0.1:7878").expect("Erreur de bind");
 
     for stream in listener.incoming() {
         let mut stream = stream.expect("Erreur lors de la récupération du stream");
-        let world_clone = Arc::clone(&world);
+        let game_state_clone = Arc::clone(&game_state);
 
         thread::spawn(move || {
-            handle_(&mut stream, world_clone);
+            handle_(&mut stream, game_state_clone);
         });
     }
 }
 
-fn handle_(stream: &mut TcpStream, world: Arc<Mutex<World>>) {
+fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
 
     loop {
         let mut reader = BufReader::new(&mut *stream);
@@ -337,7 +373,7 @@ fn handle_(stream: &mut TcpStream, world: Arc<Mutex<World>>) {
                 }
 
                 if let Some(c) = cmd {
-                    let resp = dispatch(c, &world);
+                    let resp = dispatch(c, &game_state);
                     match resp {
                         Response::Ok(msg) => {
                             let message = format!("OK: {}", msg);
