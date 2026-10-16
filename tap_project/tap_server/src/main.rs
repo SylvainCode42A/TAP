@@ -1,6 +1,48 @@
 use std::net::{TcpListener, TcpStream};
 use std::io::{BufRead, BufReader, Write};
 use std::thread;
+use serde::Deserialize;
+use std::collections::HashMap;
+
+#[derive(Deserialize)]
+struct Location {
+    name: String,
+    description: String,
+    exits: HashMap<String, String>,
+    #[serde(default)]
+    items: Vec<String>,
+    #[serde(default)]
+    spawns: Vec<Spawn>,
+}
+
+#[derive(Deserialize)]
+struct Item {
+    name: String,
+    description: String,
+    obtainable: bool,
+}
+
+#[derive(Deserialize)]
+struct Npc {
+    name: String,
+    description: String,
+    dialogue: Vec<String>,
+    stats: HashMap<String, u32>,
+}
+
+#[derive(Deserialize)]
+struct Quest {
+    name: String,
+    description: String,
+    objectives: Vec<String>,
+    rewards: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Spawn {
+    npc_type: String,
+    count: u32,
+}
 
 enum Command {
     Connect { username: String },
