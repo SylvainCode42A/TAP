@@ -1,5 +1,6 @@
 use std::net::{TcpListener, TcpStream};
 use std::io::{BufRead, BufReader, Write};
+use std::thread;
 
 enum Command {
     Connect { username: String },
@@ -32,7 +33,24 @@ enum Response {
 fn dispatch(cmd: Command) -> Response {
     match cmd {
         Command::Connect { username } => Response::Ok(format!("{} connected", username)),
-        _ => Response::Err { code: 404, message: "Not implemented yet".to_string() },
+        Command::Look => Response::Err { code: 404, message: "world not init".to_string() },
+        Command::Move { direction } => Response::Ok(format!("room=next_is_{}", direction)),
+        Command::Take { item } => Response::Err { code: 404, message: format!("{} item not found", item) },
+        Command::Drop { item } => Response::Err { code: 404, message: format!("{} item can't dropped", item) },
+        Command::Inventory => Response::Err { code: 404, message: "Inventory not found".to_string() },
+        Command::Talk { npc } => Response::Err { code: 404, message: format!("{} not found in room", npc) },
+        Command::Attack { target } => Response::Err { code: 404, message: format!("{} not found in room", target) },
+        Command::Status => Response::Err { code: 404, message: "Status can't check".to_string() },
+        Command::Quest { quest_id } => Response::Err { code: 404, message: format!("{} not found in room", quest_id) },
+        Command::Quests => Response::Err { code: 404, message: "Quests not set at the time".to_string() },
+        Command::Who => Response::Err { code: 404, message: "Nobody in world".to_string() },
+        Command::GroupInvite { username } => Response::Err { code: 404, message: format!("Group not found to invit {}", username) },
+        Command::GroupJoin {group_id} => Response::Err { code: 404, message: format!("{} not found", group_id) },
+        Command::GroupLeave => Response::Err { code: 404, message: "Can't leave this group".to_string() },
+        Command::ChatGlobal { message } => Response::Err { code: 404, message: format!("ChatGlobal not found to send {}", message) },
+        Command::ChatRoom { message } => Response::Err { code: 404, message: format!("ChatRoom not found to send {}", message) },
+        Command::ChatGroup { message } => Response::Err { code: 404, message: format!("ChatGroup not found to send {}", message) },
+        Command::Quit => Response::Ok("OK goodbye".to_string()),
     }
 }
 
@@ -41,7 +59,9 @@ fn main() {
 
     for stream in listener.incoming() {
         let mut stream = stream.expect("Erreur lors de la récupération du stream");
-        handle_(&mut stream);
+        thread::spawn(move || {
+            handle_(&mut stream);
+        });
     }
 }
 
@@ -58,48 +78,38 @@ fn handle_(stream: &mut TcpStream) {
                 let mut matched = false;
                 let mut should_quit = false;
                 let mut cmd: Option<Command> = None;
+                let actions: Vec<&str> = line.split_whitespace().collect();
 
-                if line.starts_with("CONNECT") {
+                if actions.get(0) == Some(&"CONNECT") {
                     matched = true;
-                    let actions: Vec<&str> = line.split_whitespace().collect();
                     if actions.len() == 2 {
                         cmd = Some(Command::Connect { username: actions[1].to_string() });
-                        //println!("OK '{}' connected", actions[1]);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CONNECT");
                     }
                 }
 
-                if line.trim() == "LOOK" {
+                if line == "LOOK\n" {
                     matched = true;
                     cmd = Some(Command::Look);
-                    println!("OK json() all info of room, players, next room");
-                }
-                else if line.trim().starts_with("LOOK") {
-                    send_error_mess(stream, "401", "Invalid number of arguments for LOOK");
                 }
 
-                if line.starts_with("MOVE") {
+                if actions.get(0) == Some(&"MOVE") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() == 2 {
                         let upper = actions[1].trim().to_uppercase();
                         if upper == "NORTH" {
                             cmd = Some(Command::Move { direction: actions[1].to_string() });
-                            println!("OK room = next_is_north");
                         }
                         else if upper == "SOUTH" {
                             cmd = Some(Command::Move { direction: actions[1].to_string() });
-                            println!("OK room = next_is_south");
                         }
                         else if upper == "WEST" {
                             cmd = Some(Command::Move { direction: actions[1].to_string() });
-                            println!("OK room = next_is_west");
                         }
                         else if upper == "EAST" {
                             cmd = Some(Command::Move { direction: actions[1].to_string() });
-                            println!("OK room = next_is_east");
                         }
                         else {
                             send_error_mess(stream, "406", "Invalid direction for MOVE");
@@ -110,186 +120,143 @@ fn handle_(stream: &mut TcpStream) {
                     }
                 }
 
-                if line.starts_with("TAKE") {
+                if actions.get(0) == Some(&"TAKE") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
-                        let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        let item = actions[1..].join(" ");
                         cmd = Some(Command::Take { item: item.to_string() });
-                        println!("OK taken={}", item);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for TAKE");
                     }
                 }
 
-                if line.starts_with("DROP") {
+                if actions.get(0) == Some(&"DROP") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
-                        let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        let item = actions[1..].join(" ");
                         cmd = Some(Command::Drop { item: item.to_string() });
-                        println!("OK dropped={}", item);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for DROP");
                     }
                 }
 
-                if line.trim() == "INVENTORY" {
+                if line == "INVENTORY\n" {
                     matched = true;
                     cmd = Some(Command::Inventory);
-                    println!("OK json() of player INVENTORY");
-                }
-                else if line.trim().starts_with("INVENTORY") {
-                    send_error_mess(stream, "401", "Invalid number of arguments for INVENTORY");
                 }
 
-                if line.starts_with("TALK") {
+                if actions.get(0) == Some(&"TALK") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
-                        let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        let item = actions[1..].join(" ");
                         cmd = Some(Command::Talk { npc: item.to_string() });
-                        println!("OK json() of TALK to '{}'", item);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for TALK");
                     }
                 }
 
-                if line.starts_with("ATTACK") {
+                if actions.get(0) == Some(&"ATTACK") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() >= 2 {
-                        let item = actions.into_iter().skip(1).collect::<Vec<&str>>().join(" ");
+                        let item = actions[1..].join(" ");
                         cmd = Some(Command::Attack { target: item.to_string() });
-                        println!("OK json() of ATTACK to player '{}'", item);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for ATTACK");
                     }
                 }
 
-                if line.trim() == "STATUS" {
+                if line == "STATUS\n" {
                     matched = true;
                     cmd = Some(Command::Status);
-                    println!("OK json() of health player")
-                }
-                else if line.trim().starts_with("STATUS") {
-                    send_error_mess(stream, "401", "Invalid number of arguments for STATUS");
                 }
 
-                if line.starts_with("QUEST ") {
+                if actions.get(0) == Some(&"QUEST") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
-                    if actions.len() == 2 {
-                        cmd = Some(Command::Quest { quest_id: actions[1].to_string() });
-                        println!("OK json() of quest '{}'", actions[1]);
+                    if actions.len() >= 2 {
+                        let item = actions[1..].join(" ");
+                        cmd = Some(Command::Quest { quest_id: item.to_string() });
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for QUEST");
                     }
                 }
 
-                if line.trim() == "QUESTS" {
+                if line == "QUESTS\n" {
                     matched = true;
                     cmd = Some(Command::Quests);
-                    println!("OK [all_quests]");
-                }
-                else if line.trim().starts_with("QUESTS") {
-                    send_error_mess(stream, "401", "Invalid number of arguments for QUESTS");
                 }
 
-                if line.trim() == "WHO" {
+                if line == "WHO\n" {
                     matched = true;
                     cmd = Some(Command::Who);
-                    println!("OK json() of all players and count");
-                }
-                else if line.trim().starts_with("WHO") {
-                    send_error_mess(stream, "401", "Invalid number of arguments for WHO");
                 }
 
-                if line.starts_with("GROUP INVITE") {
+                if actions.get(0) == Some(&"GROUP") && actions.get(1) == Some(&"INVITE") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() == 3 {
                         cmd = Some(Command::GroupInvite { username: actions[2].to_string() });
-                        println!("OK group_invite=pending for player '{}'", actions[2]);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for GROUP INVITE");
                     }
                 }
 
-                if line.starts_with("GROUP JOIN") {
+                if actions.get(0) == Some(&"GROUP") && actions.get(1) == Some(&"JOIN") {
                     matched = true;
-                    let actions : Vec<&str> = line.split_whitespace().collect();
                     if actions.len() == 3 {
                         cmd = Some(Command::GroupJoin { group_id: actions[2].to_string() });
-                        println!("OK joined={}", actions[2]);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for GROUP JOIN");
                     }
                 }
 
-                if line.trim() == "GROUP LEAVE" {
+                if line == "GROUP LEAVE\n" {
                     matched = true;
                     cmd = Some(Command::GroupLeave);
-                    println!("OK left_group");
-                }
-                else if line.trim().starts_with("GROUP LEAVE") {
-                    send_error_mess(stream, "401", "Invalid number of arguments for GROUP LEAVE");
                 }
 
-                if line.starts_with("CHAT GLOBAL") {
+                if actions.get(0) == Some(&"CHAT") && actions.get(1) == Some(&"GLOBAL") {
                     matched = true;
-                    let actions: Vec<&str> = line.split_whitespace().collect();
                     if actions.len() > 2 {
-                        let rest = actions.into_iter().skip(2).collect::<Vec<&str>>().join(" ");
+                        let rest = actions[2..].join(" ");
                         cmd = Some(Command::ChatGlobal { message: rest.to_string() });
-                        println!("OK say '{}' in GLOBAL", rest);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CHAT GLOBAL");
                     }
                 }
 
-                if line.starts_with("CHAT ROOM") {
+                if actions.get(0) == Some(&"CHAT") && actions.get(1) == Some(&"ROOM") {
                     matched = true;
-                    let actions: Vec<&str> = line.split_whitespace().collect();
                     if actions.len() > 2 {
-                        let rest = actions.into_iter().skip(2).collect::<Vec<&str>>().join(" ");
+                        let rest = actions[2..].join(" ");
                         cmd = Some(Command::ChatRoom { message: rest.to_string() });
-                        println!("OK say '{}' in ROOM", rest);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CHAT ROOM");
                     }
                 }
 
-                if line.starts_with("CHAT GROUP") {
+                if actions.get(0) == Some(&"CHAT") && actions.get(1) == Some(&"GROUP") {
                     matched = true;
-                    let actions: Vec<&str> = line.split_whitespace().collect();
                     if actions.len() > 2 {
-                        let rest = actions.into_iter().skip(2).collect::<Vec<&str>>().join(" ");
+                        let rest = actions[2..].join(" ");
                         cmd = Some(Command::ChatGroup { message: rest.to_string() });
-                        println!("OK say '{}' in GROUP", rest);
                     }
                     else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CHAT GROUP");
                     }
                 }
 
-                if line.trim() == "QUIT" {
+                if line == "QUIT\n" {
                     matched = true;
                     cmd = Some(Command::Quit);
                     should_quit = true;
-                    println!("OK goodbye");
-                }
-                else if line.trim().starts_with("QUIT") {
-                    send_error_mess(stream, "401", "Invalid number of arguments for QUIT");
                 }
 
                 if !matched {
