@@ -5,6 +5,19 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Deserialize)]
+struct World {
+    world: WorldData,
+}
+
+#[derive(Deserialize)]
+struct WorldData {
+    locations: HashMap<String, Location>,
+    items: HashMap<String, Item>,
+    npcs: HashMap<String, Npc>,
+    quests: HashMap<String, Quest>,
+}
+
+#[derive(Deserialize)]
 struct Location {
     name: String,
     description: String,
