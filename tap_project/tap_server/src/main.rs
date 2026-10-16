@@ -3,6 +3,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::thread;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fs;
+use std::sync::{Arc, Mutex};
 
 #[derive(Deserialize)]
 struct World {
@@ -84,11 +86,23 @@ enum Response {
     Err { code: u16, message: String },
 }
 
+fn load_world() -> World {
+    let content = fs::read_to_string("data/world.yaml").expect("Impossible to read world.yaml");
+    serde_yaml::from_str(&content).expect("Parsing error")
+}
+
 //SREZZAQ
-fn dispatch(cmd: Command) -> Response {
+fn dispatch(cmd: Command, world: &Arc<Mutex<World>>) -> Response {
     match cmd {
         Command::Connect { username } => Response::Ok(format!("{} connected", username)),
-        Command::Look => Response::Err { code: 404, message: "world not init".to_string() },
+        Command::Look => {
+            let w = world.lock().unwrap();
+            if w.world.locations.is_empty() {
+                Response::Err { code: 404, message: "world not init".to_string()}
+            } else {
+                Response::Ok(format!("locations_count = {}", w.world.locations.len()))
+            }
+        },
         Command::Move { direction } => Response::Ok(format!("room=next_is_{}", direction)),
         Command::Take { item } => Response::Err { code: 404, message: format!("{} item not found", item) },
         Command::Drop { item } => Response::Err { code: 404, message: format!("{} item can't dropped", item) },
@@ -110,17 +124,21 @@ fn dispatch(cmd: Command) -> Response {
 }
 
 fn main() {
+    let world = Arc::new(Mutex::new(load_world()));
+
     let listener = TcpListener::bind("127.0.0.1:7878").expect("Erreur de bind");
 
     for stream in listener.incoming() {
         let mut stream = stream.expect("Erreur lors de la récupération du stream");
+        let world_clone = Arc::clone(&world);
+
         thread::spawn(move || {
-            handle_(&mut stream);
+            handle_(&mut stream, world_clone);
         });
     }
 }
 
-fn handle_(stream: &mut TcpStream) {
+fn handle_(stream: &mut TcpStream, world: Arc<Mutex<World>>) {
 
     loop {
         let mut reader = BufReader::new(&mut *stream);
@@ -319,7 +337,7 @@ fn handle_(stream: &mut TcpStream) {
                 }
 
                 if let Some(c) = cmd {
-                    let resp = dispatch(c);
+                    let resp = dispatch(c, &world);
                     match resp {
                         Response::Ok(msg) => {
                             let message = format!("OK: {}", msg);
@@ -338,7 +356,7 @@ fn handle_(stream: &mut TcpStream) {
             },
 
             Err(e) => {
-                println!("ERRoR: {}", e);
+                println!("ERROR: {}", e);
                 break;
             },
         }
