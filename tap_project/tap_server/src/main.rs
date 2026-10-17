@@ -169,10 +169,74 @@ fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: 
             }
         },
 
-        Command::Take { item } => Response::Err { code: 404, message: format!("{} item not found", item) },
+        Command::Take { item } => {
+            match current_username {
+                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+                Some(username) => {
+                    let mut gs = game_state.lock().unwrap();
+                    let current_room = match gs.players.get(username) {
+                        None => return Response::Err { code: 404, message: "Player not connected".to_string() },
+                        Some(player) => player.current_room.clone(),
+                    };
+                    match gs.world.world.locations.get_mut(&current_room) {
+                        None => Response::Err { code: 404, message: "Current room not found".to_string() },
+                        Some(room) => {
+                            if !room.items.contains(&item) {
+                                Response::Err { code: 404, message: format!("{} not in this room", item) }
+                            } else {
+                                room.items.retain(|i| i != &item);
+                                if let Some(p) = gs.players.get_mut(username) {
+                                    p.inventory.push(item.clone());
+                                }
+                                Response::Ok(format!("taken={}", item))
+                            }
+                        }
+                    }
+                }
+            }
+        },
 
-        Command::Drop { item } => Response::Err { code: 404, message: format!("{} item can't dropped", item) },
-        Command::Inventory => Response::Err { code: 404, message: "Inventory not found".to_string() },
+        Command::Drop { item } => {
+            match current_username {
+                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+                Some(username) => {
+                    let mut gs = game_state.lock().unwrap();
+                    let current_room = match gs.players.get_mut(username) {
+                        None => return Response::Err { code: 404, message: "Player not connected".to_string() },
+                        Some(player) => player.current_room.clone(),
+                    };
+                    let has_item = match gs.players.get(username) {
+                        None => return Response::Err { code: 404, message: "Player not in room".to_string() },
+                        Some(player) => player.inventory.contains(&item)
+                    };
+                    if !has_item {
+                        Response::Err { code: 404, message: format!("{} not in inventory", item) }
+                    } else {
+                        if let Some(player) = gs.players.get_mut(username) {
+                            player.inventory.retain(|i| i != &item)
+                        }
+                        if let Some(room) = gs.world.world.locations.get_mut(&current_room) {
+                            room.items.push(item.clone());
+                        }
+                        Response::Ok(format!("dropped={}", item))
+                    }
+                }
+            }
+        },
+
+        Command::Inventory => {
+            match current_username {
+                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+                Some(username) => {
+                    let gs = game_state.lock().unwrap();
+                    match gs.players.get(username) {
+                        None => Response::Err { code: 404, message: "Player not CONNECTED".to_string() },
+                        Some(player) => Response::Ok(format!("{:?}", player.inventory)),
+                    }
+                }
+            }
+        },
+
         Command::Talk { npc } => Response::Err { code: 404, message: format!("{} not found in room", npc) },
         Command::Attack { target } => Response::Err { code: 404, message: format!("{} not found in room", target) },
         Command::Status => Response::Err { code: 404, message: "Status can't check".to_string() },
@@ -414,7 +478,7 @@ fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     match resp {
                         Response::Ok(msg) => {
                             let message = format!("OK: {}", msg);
-                            println!("{}", msg);
+                            println!("{}", message);
                             stream.write_all(message.as_bytes()).expect("Failed to send response");
                         }
                         Response::Err { code, message } => {
