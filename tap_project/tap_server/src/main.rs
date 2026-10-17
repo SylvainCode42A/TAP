@@ -91,6 +91,7 @@ struct Player {
     current_room: String,
     inventory: Vec<String>,
     hp: u32,
+    talk_progress: HashMap<String, usize>,
 }
 
 struct GameState {
@@ -117,6 +118,7 @@ fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: 
                     current_room: "entrance".to_string(),
                     inventory: vec![],
                     hp: 100,
+                    talk_progress: HashMap::new(),
                 };
                 gs.players.insert(username.clone(), player);
                 Response::Ok(format!("{} connected", username))
@@ -237,12 +239,40 @@ fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: 
             }
         },
 
-        Command::Talk { npc } => Response::Err { code: 404, message: format!("{} not found in room", npc) },
-        Command::Attack { target } => Response::Err { code: 404, message: format!("{} not found in room", target) },
+        Command::Talk { npc } => {
+            match current_username {
+                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+                Some(username) => {
+                    let mut gs = game_state.lock().unwrap();
+                    match gs.world.world.npcs.get(&npc) {
+                        None => Response::Err { code: 404, message: format!("{} not found", npc) },
+                        Some(npc_data) => {
+                            let dialogue = npc_data.dialogue.clone();
+                            match gs.players.get_mut(username) {
+                                None => Response::Err { code: 404, message: "Player not CONNECTED".to_string() },
+                                Some(player) => {
+                                    let index = player.talk_progress.entry(npc.clone()).or_insert(0);
+                                    let phrase = dialogue[*index % dialogue.len()].clone();
+                                    *index += 1;
+                                    Response::Ok(phrase)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+
+        Command::Attack { target } => {
+            
+            Response::Err { code: 404, message: format!("{} not found in room", target) },
+        },
+
         Command::Status => Response::Err { code: 404, message: "Status can't check".to_string() },
         Command::Quest { quest_id } => Response::Err { code: 404, message: format!("{} not found in room", quest_id) },
         Command::Quests => Response::Err { code: 404, message: "Quests not set at the time".to_string() },
         Command::Who => Response::Err { code: 404, message: "Nobody in world".to_string() },
+
         Command::GroupInvite { username } => Response::Err { code: 404, message: format!("Group not found to invit {}", username) },
         Command::GroupJoin {group_id} => Response::Err { code: 404, message: format!("{} not found", group_id) },
         Command::GroupLeave => Response::Err { code: 404, message: "Can't leave this group".to_string() },
