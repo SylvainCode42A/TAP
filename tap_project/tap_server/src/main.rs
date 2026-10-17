@@ -19,7 +19,7 @@ struct WorldData {
     quests: HashMap<String, Quest>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct Location {
     name: String,
     description: String,
@@ -53,7 +53,7 @@ struct Quest {
     rewards: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct Spawn {
     npc_type: String,
     count: u32,
@@ -105,7 +105,7 @@ impl World {
     }
 }
 
-fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>) -> Response {
+fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: &Option<String>) -> Response {
     match cmd {
         Command::Connect { username } => {
             let mut gs = game_state.lock().unwrap();
@@ -121,18 +121,53 @@ fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>) -> Response {
                 gs.players.insert(username.clone(), player);
                 Response::Ok(format!("{} connected", username))
             }
-        }
+        },
 
         Command::Look => {
-            let gs = game_state.lock().unwrap();
-            if gs.world.world.locations.is_empty() {
-                Response::Err { code: 404, message: "world not init".to_string()}
-            } else {
-                Response::Ok(format!("locations_count = {}", gs.world.world.locations.len()))
+            match current_username {
+                Some(username) => {
+                    let gs = game_state.lock().unwrap();
+                    match gs.players.get(username) {
+                        Some(player) => match gs.world.world.locations.get(&player.current_room) {
+                            Some(room) => Response::Ok(format!("{}_room = {:?}", player.username, room)),
+                            None => Response::Err { code: 404, message: "Current room not found".to_string() }
+                        }
+                        None => Response::Err { code: 404, message: "Current player not found".to_string() }
+                    }
+                }
+                None => {
+                    Response::Err { code: 404, message: "Try with first CONNECTED".to_string() }
+                }
             }
         },
 
-        Command::Move { direction } => Response::Ok(format!("room=next_is_{}", direction)),
+        Command::Move { direction } => {
+            match current_username {
+                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+                Some(username) => {
+                    let mut gs =  game_state.lock().unwrap();
+                    match gs.players.get(username) {
+                        None => Response::Err { code: 404, message: "Current room not found".to_string() },
+                        Some(player) => {
+                            match gs.world.world.locations.get(&player.current_room) {
+                                None => Response::Err { code: 404, message: "Current room not found".to_string() },
+                                Some(room) => {
+                                    match room.exits.get(&direction.to_lowercase()).cloned() {
+                                        None => Response::Err { code: 406, message: format!("No exit {} from here", direction) },
+                                        Some(new_room) => {
+                                            if let Some(p) = gs.players.get_mut(username) {
+                                                p.current_room = new_room.clone();
+                                            }
+                                            Response::Ok(format!("room=next_is_{}", new_room))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
 
         Command::Take { item } => Response::Err { code: 404, message: format!("{} item not found", item) },
 
@@ -175,6 +210,7 @@ fn main() {
 }
 
 fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
+    let mut current_username: Option<String> = None;
 
     loop {
         let mut reader = BufReader::new(&mut *stream);
@@ -192,6 +228,7 @@ fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 if actions.get(0) == Some(&"CONNECT") {
                     matched = true;
                     if actions.len() == 2 {
+                        current_username = Some(actions[1].to_string());
                         cmd = Some(Command::Connect { username: actions[1].to_string() });
                     }
                     else {
@@ -373,7 +410,7 @@ fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 }
 
                 if let Some(c) = cmd {
-                    let resp = dispatch(c, &game_state);
+                    let resp = dispatch(c, &game_state, &current_username);
                     match resp {
                         Response::Ok(msg) => {
                             let message = format!("OK: {}", msg);
