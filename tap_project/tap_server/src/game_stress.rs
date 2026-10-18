@@ -1,10 +1,21 @@
-// Edge cases and randomized invariant checks for combat and quests.
+// -- Stress tests : combat and quests ----------------------------------------
+//
+// Two kinds of tests:
+//   - edge cases: odd names, unknown players, shared monster health, ...
+//   - a random campaign: thousands of random actions by four players, with
+//     every invariant checked after each action.
+//
+// The campaign moves players and edits inventories by hand: it tests
+// combat.rs and quest.rs, not MOVE, TAKE and DROP.
 
 use std::collections::HashMap;
+
 use crate::combat::{self, MAX_HP, RESPAWN_HP, RESPAWN_ROOM};
 use crate::quest::{self, QuestStatus};
 use crate::test_support::{game_with_player, ok_body};
 use crate::{GameState, Player, Quest, Response, Spawn};
+
+// -- Helpers -----------------------------------------------------------------
 
 fn add_player(gs: &mut GameState, username: &str, room: &str) {
     let mut player = Player::new(username);
@@ -13,41 +24,54 @@ fn add_player(gs: &mut GameState, username: &str, room: &str) {
 }
 
 fn give(gs: &mut GameState, username: &str, item: &str) {
-    gs.players.get_mut(username).unwrap().inventory.push(item.to_string());
+    let player = gs.players.get_mut(username).unwrap();
+    player.inventory.push(item.to_string());
 }
+
+fn is_err(reply: Response, expected: u16) -> bool {
+    matches!(reply, Response::Err { code, .. } if code == expected)
+}
+
+// -- Edge cases --------------------------------------------------------------
 
 #[test]
 fn npc_name_ignores_case_and_surrounding_spaces() {
     let mut gs = game_with_player("alice", "monster_room");
-    assert!(matches!(combat::attack(&mut gs, "alice", "  MONSTER  "), Response::Ok(_)));
+    let reply = combat::attack(&mut gs, "alice", "  MONSTER  ");
+    assert!(matches!(reply, Response::Ok(_)));
 }
 
 #[test]
 fn weird_targets_never_panic() {
     let long = "x".repeat(10_000);
-    for target in ["", "   ", "monstre", "mon ster", "\u{1F47E}", "é", long.as_str()] {
+    let targets = [
+        "", "   ", "monstre", "mon ster", "\u{1F47E}", "\u{e9}", &long,
+    ];
+
+    for target in targets {
         let mut gs = game_with_player("alice", "monster_room");
-        assert!(matches!(combat::attack(&mut gs, "alice", target), Response::Err { code: 404, .. }));
-        assert!(matches!(quest::quest(&mut gs, "alice", target), Response::Err { code: 404, .. }));
+        assert!(is_err(combat::attack(&mut gs, "alice", target), 404));
+        assert!(is_err(quest::quest(&mut gs, "alice", target), 404));
     }
 }
 
 #[test]
 fn unknown_player_is_404_everywhere() {
     let mut gs = game_with_player("alice", "monster_room");
-    assert!(matches!(combat::attack(&mut gs, "ghost", "monster"), Response::Err { code: 404, .. }));
-    assert!(matches!(combat::status(&gs, "ghost"), Response::Err { code: 404, .. }));
-    assert!(matches!(quest::quest(&mut gs, "ghost", "merchant"), Response::Err { code: 404, .. }));
-    assert!(matches!(quest::quests(&gs, "ghost"), Response::Err { code: 404, .. }));
+    assert!(is_err(combat::attack(&mut gs, "ghost", "monster"), 404));
+    assert!(is_err(combat::status(&gs, "ghost"), 404));
+    assert!(is_err(quest::quest(&mut gs, "ghost", "merchant"), 404));
+    assert!(is_err(quest::quests(&gs, "ghost"), 404));
 }
 
 #[test]
 fn spawned_but_undefined_npc_is_404_not_panic() {
     let mut gs = game_with_player("alice", "corridor");
-    gs.world.world.locations.get_mut("corridor").unwrap()
-        .spawns.push(Spawn { npc_type: "phantom".to_string(), count: 1 });
-    assert!(matches!(combat::attack(&mut gs, "alice", "phantom"), Response::Err { code: 404, .. }));
-    assert!(matches!(quest::quest(&mut gs, "alice", "phantom"), Response::Err { code: 406, .. }));
+    let corridor = gs.world.world.locations.get_mut("corridor").unwrap();
+    corridor.spawns.push(Spawn { npc_type: "phantom".to_string(), count: 1 });
+
+    assert!(is_err(combat::attack(&mut gs, "alice", "phantom"), 404));
+    assert!(is_err(quest::quest(&mut gs, "alice", "phantom"), 406));
 }
 
 #[test]
@@ -55,10 +79,16 @@ fn monster_hp_is_shared_and_kill_goes_to_finisher() {
     let mut gs = game_with_player("alice", "monster_room");
     add_player(&mut gs, "bob", "monster_room");
     give(&mut gs, "alice", "sword");
-    assert!(ok_body(combat::attack(&mut gs, "alice", "monster")).contains("\"target_hp\": 5"));
-    assert!(ok_body(combat::attack(&mut gs, "bob", "monster")).contains("\"status\": \"victory\""));
-    assert!(gs.players["bob"].kills.contains(&"monster".to_string()));
-    assert!(!gs.players["alice"].kills.contains(&"monster".to_string()));
+
+    // alice hits for 15 (20 -> 5), bob finishes with 5.
+    let hit = ok_body(combat::attack(&mut gs, "alice", "monster"));
+    assert!(hit.contains("\"target_hp\": 5"));
+    let kill = ok_body(combat::attack(&mut gs, "bob", "monster"));
+    assert!(kill.contains("\"status\": \"victory\""));
+
+    let monster = "monster".to_string();
+    assert!(gs.players["bob"].kills.contains(&monster));
+    assert!(!gs.players["alice"].kills.contains(&monster));
     assert_eq!(gs.npc_hp["monster"], 20);
 }
 
@@ -66,9 +96,13 @@ fn monster_hp_is_shared_and_kill_goes_to_finisher() {
 fn respawned_player_is_wounded_at_entrance() {
     let mut gs = game_with_player("alice", "monster_room");
     gs.players.get_mut("alice").unwrap().hp = 12;
-    assert!(ok_body(combat::attack(&mut gs, "alice", "monster")).contains("\"status\": \"defeated\""));
+
+    let fight = ok_body(combat::attack(&mut gs, "alice", "monster"));
+    assert!(fight.contains("\"status\": \"defeated\""));
+
     let body = ok_body(combat::status(&gs, "alice"));
-    assert!(body.contains(&format!("\"hp\": {}", RESPAWN_HP)) && body.contains("\"wounded\""));
+    assert!(body.contains(&format!("\"hp\": {}", RESPAWN_HP)));
+    assert!(body.contains("\"wounded\""));
     assert_eq!(gs.players["alice"].current_room, RESPAWN_ROOM);
 }
 
@@ -81,7 +115,7 @@ fn quests_is_empty_array_before_any_quest() {
 #[test]
 fn quest_without_conditions_completes_on_second_call() {
     let mut gs = game_with_player("alice", "entrance");
-    gs.world.world.quests.insert("chat".to_string(), Quest {
+    let chat = Quest {
         name: "Chat".to_string(),
         description: "Say \"hi\"\\now".to_string(),
         objectives: vec![],
@@ -89,14 +123,25 @@ fn quest_without_conditions_completes_on_second_call() {
         giver: "merchant".to_string(),
         requires_item: None,
         requires_kill: None,
-    });
+    };
+    gs.world.world.quests.insert("chat".to_string(), chat);
+
+    // "chat" sorts before "treasure_quest", so it comes first.
     let first = ok_body(quest::quest(&mut gs, "alice", "merchant"));
-    assert!(first.contains("\"quest_id\": \"chat\"") && first.contains("Say \\\"hi\\\"\\\\now"));
-    assert!(ok_body(quest::quest(&mut gs, "alice", "merchant")).contains("\"completed\""));
-    assert!(ok_body(quest::quest(&mut gs, "alice", "merchant")).contains("\"treasure_quest\""));
+    assert!(first.contains("\"quest_id\": \"chat\""));
+    assert!(first.contains("Say \\\"hi\\\"\\\\now"));
+
+    let second = ok_body(quest::quest(&mut gs, "alice", "merchant"));
+    assert!(second.contains("\"completed\""));
+
+    let third = ok_body(quest::quest(&mut gs, "alice", "merchant"));
+    assert!(third.contains("\"treasure_quest\""));
 }
 
-// xorshift64: deterministic, no external crate.
+// -- Random campaign ---------------------------------------------------------
+
+// xorshift64: a tiny deterministic random generator, no external crate.
+// Same seed, same sequence: a failing campaign can be replayed exactly.
 struct Rng(u64);
 
 impl Rng {
@@ -108,85 +153,114 @@ impl Rng {
     }
 
     fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
-        items[(self.next() % items.len() as u64) as usize]
+        let index = self.next() % items.len() as u64;
+        items[index as usize]
     }
 }
 
-// Runs `steps` random actions from `seed`, checks invariants after each, returns the transcript.
-fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
-    let players = ["alice", "bob", "carol", "dave"];
-    let rooms = ["entrance", "corridor", "guard_room", "library", "armory", "monster_room", "treasure", "secret_cell"];
-    let names = ["monster", "Monster", " MONSTER ", "merchant", "prisoner", "Prisoner", "ghost", "", "\u{1F47E}"];
-    let items = ["sword", "cell_key", "treasure"];
+const PLAYERS: [&str; 4] = ["alice", "bob", "carol", "dave"];
+const ROOMS: [&str; 8] = [
+    "entrance", "corridor", "guard_room", "library",
+    "armory", "monster_room", "treasure", "secret_cell",
+];
+const NAMES: [&str; 9] = [
+    "monster", "Monster", " MONSTER ", "merchant", "prisoner",
+    "Prisoner", "ghost", "", "\u{1F47E}",
+];
+const ITEMS: [&str; 3] = ["sword", "cell_key", "treasure"];
 
+// Plays `steps` random actions from `seed`, checks every invariant after each
+// one, and returns every reply in order.
+fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
     let mut gs = game_with_player("alice", "entrance");
-    for name in &players[1..] {
+    for name in &PLAYERS[1..] {
         add_player(&mut gs, name, "entrance");
     }
-    let max_npc_hp: HashMap<String, u32> = gs.world.world.npcs.iter()
-        .map(|(id, npc)| (id.clone(), npc.stats.get("hp").copied().unwrap_or(1)))
-        .collect();
+
+    let mut max_npc_hp: HashMap<String, u32> = HashMap::new();
+    for (id, npc) in &gs.world.world.npcs {
+        let hp = npc.stats.get("hp").copied().unwrap_or(1);
+        max_npc_hp.insert(id.clone(), hp);
+    }
+
     let mut rng = Rng(seed);
-    let mut completed: Vec<(String, String)> = vec![];
-    let mut transcript = vec![];
+    let mut completed: Vec<(String, String)> = Vec::new();
+    let mut transcript: Vec<String> = Vec::new();
 
     for step in 0..steps {
-        let who = rng.pick(&players);
-        let response = match rng.next() % 8 {
-            0 | 1 => combat::attack(&mut gs, who, rng.pick(&names)),
+
+        // 1. One random action by one random player.
+        let who = rng.pick(&PLAYERS);
+        let reply = match rng.next() % 8 {
+            0 | 1 => combat::attack(&mut gs, who, rng.pick(&NAMES)),
             2 => combat::status(&gs, who),
-            3 => quest::quest(&mut gs, who, rng.pick(&names)),
+            3 => quest::quest(&mut gs, who, rng.pick(&NAMES)),
             4 => quest::quests(&gs, who),
             5 => {
                 let player = gs.players.get_mut(who).unwrap();
-                player.current_room = rng.pick(&rooms).to_string();
+                player.current_room = rng.pick(&ROOMS).to_string();
                 player.in_combat = None;
                 continue;
             }
             6 => {
-                give(&mut gs, who, rng.pick(&items));
+                give(&mut gs, who, rng.pick(&ITEMS));
                 continue;
             }
             _ => {
-                let item = rng.pick(&items);
-                gs.players.get_mut(who).unwrap().inventory.retain(|held| held != item);
+                let item = rng.pick(&ITEMS);
+                let player = gs.players.get_mut(who).unwrap();
+                player.inventory.retain(|held| held != item);
                 continue;
             }
         };
 
-        match &response {
+        // 2. The reply is well formed.
+        match &reply {
             Response::Ok(body) => {
                 let opens = body.matches(['{', '[']).count();
                 let closes = body.matches(['}', ']']).count();
-                assert_eq!(opens, closes, "step {step}: unbalanced JSON {body}");
+                assert_eq!(opens, closes, "step {step}: unbalanced {body}");
                 transcript.push(body.clone());
             }
             Response::Err { code, message } => {
-                assert!([404, 405, 406].contains(code), "step {step}: unexpected code {code}");
+                assert!([404, 405, 406].contains(code),
+                    "step {step}: unexpected code {code}");
                 transcript.push(format!("{code} {message}"));
             }
         }
 
+        // 3. Players: hp in bounds, fights and kills only hostile NPCs.
         for (name, player) in &gs.players {
-            assert!((1..=MAX_HP).contains(&player.hp), "step {step}: {name} hp {}", player.hp);
+            assert!((1..=MAX_HP).contains(&player.hp),
+                "step {step}: {name} hp {}", player.hp);
             if let Some(target) = &player.in_combat {
-                assert!(gs.world.world.npcs[target].hostile, "step {step}: {name} fights a friendly");
+                assert!(gs.world.world.npcs[target].hostile,
+                    "step {step}: {name} fights a friendly NPC");
             }
             for kill in &player.kills {
-                assert!(gs.world.world.npcs[kill].hostile, "step {step}: {name} killed a friendly");
+                assert!(gs.world.world.npcs[kill].hostile,
+                    "step {step}: {name} killed a friendly NPC");
             }
         }
+
+        // 4. NPC hp in bounds: never 0 stored, never above max.
         for (npc, hp) in &gs.npc_hp {
-            assert!((1..=max_npc_hp[npc]).contains(hp), "step {step}: {npc} hp {hp}");
+            assert!((1..=max_npc_hp[npc]).contains(hp),
+                "step {step}: {npc} hp {hp}");
         }
+
+        // 5. A completed quest stays completed forever.
         for (name, quest_id) in &completed {
-            assert_eq!(gs.players[name].quests.get(quest_id), Some(&QuestStatus::Completed),
+            let status = gs.players[name].quests.get(quest_id);
+            assert_eq!(status, Some(&QuestStatus::Completed),
                 "step {step}: {name} lost completed {quest_id}");
         }
         for (name, player) in &gs.players {
             for (quest_id, status) in &player.quests {
                 let entry = (name.clone(), quest_id.clone());
-                if *status == QuestStatus::Completed && !completed.contains(&entry) {
+                if *status == QuestStatus::Completed
+                    && !completed.contains(&entry)
+                {
                     completed.push(entry);
                 }
             }
@@ -195,17 +269,31 @@ fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
     transcript
 }
 
+// 20 campaigns of 20 000 actions. Also checks the campaign really reached
+// every outcome: a run that never kills anything would prove nothing.
 #[test]
 fn random_campaign_keeps_invariants() {
+    let outcomes = [
+        "\"victory\"", "\"defeated\"", "\"completed\"", "405 ", "406 ",
+    ];
     let mut seen: HashMap<&str, usize> = HashMap::new();
+
     for seed in 1..=20 {
         let transcript = random_campaign(seed * 0x9E37_79B9, 20_000);
-        for outcome in ["\"victory\"", "\"defeated\"", "\"completed\"", "405 ", "406 "] {
-            *seen.entry(outcome).or_default() += transcript.iter().filter(|line| line.contains(outcome)).count();
+        for outcome in outcomes {
+            for line in &transcript {
+                if line.contains(outcome) {
+                    *seen.entry(outcome).or_default() += 1;
+                }
+            }
         }
     }
+
     println!("{seen:?}");
-    assert!(seen.values().all(|&count| count > 0), "campaign never reached some outcome: {seen:?}");
+    for outcome in outcomes {
+        assert!(seen.get(outcome).copied().unwrap_or(0) > 0,
+            "campaign never reached {outcome}: {seen:?}");
+    }
 }
 
 #[test]
