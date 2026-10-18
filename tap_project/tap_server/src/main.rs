@@ -5,8 +5,10 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
+mod combat;
 mod dispatch;
 mod parsing;
+mod quest;
 
 #[derive(Deserialize)]
 pub struct World {
@@ -45,6 +47,9 @@ pub struct Npc {
     pub description: String,
     pub dialogue: Vec<String>,
     pub stats: HashMap<String, u32>,
+    /// True for enemies: only they accept `ATTACK`. Absent in YAML: false.
+    #[serde(default)]
+    pub hostile: bool,
 }
 
 #[derive(Deserialize)]
@@ -53,6 +58,15 @@ pub struct Quest {
     pub description: String,
     pub objectives: Vec<String>,
     pub rewards: Vec<String>,
+    /// Id of the NPC that gives and takes back this quest.
+    #[serde(default)]
+    pub giver: String,
+    /// Item that must be in the inventory to turn the quest in.
+    #[serde(default)]
+    pub requires_item: Option<String>,
+    /// NPC id the player must have beaten to turn the quest in.
+    #[serde(default)]
+    pub requires_kill: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -94,11 +108,36 @@ pub struct Player {
     pub inventory: Vec<String>,
     pub hp: u32,
     pub talk_progress: HashMap<String, usize>,
+    /// NPC id fought in the last round, None outside combat.
+    pub in_combat: Option<String>,
+    /// NPC ids this player has beaten at least once.
+    pub kills: Vec<String>,
+    /// Quests taken, by quest id. A quest never taken has no entry.
+    pub quests: HashMap<String, quest::QuestStatus>,
+}
+
+impl Player {
+    /// A fresh player: full health, empty inventory, at the entrance.
+    pub fn new(username: &str) -> Player {
+        Player {
+            username: username.to_string(),
+            current_room: combat::RESPAWN_ROOM.to_string(),
+            inventory: vec![],
+            hp: combat::MAX_HP,
+            talk_progress: HashMap::new(),
+            in_combat: None,
+            kills: vec![],
+            quests: HashMap::new(),
+        }
+    }
 }
 
 pub struct GameState {
     pub world: World,
     pub players: HashMap<String, Player>,
+    /// Current hp of each NPC hit at least once, by NPC id. An NPC never
+    /// hit has no entry: its hp is still the `hp` stat of world.yaml.
+    pub npc_hp: HashMap<String, u32>,
 }
 
 impl World {
@@ -112,6 +151,7 @@ fn main() {
     let game_state = GameState {
         world: World::load_world(),
         players: HashMap::new(),
+        npc_hp: HashMap::new(),
     };
 
     let game_state = Arc::new(Mutex::new(game_state));
@@ -132,4 +172,31 @@ pub fn send_error_mess(stream: &mut TcpStream, t_error: &str, error: &str) {
     let message = format!("ERR {} {}\n", t_error, error);
     println!("{}", message.trim());
     stream.write_all(message.as_bytes()).expect("Failed to send message error");
+}
+
+#[cfg(test)]
+mod game_stress;
+
+#[cfg(test)]
+mod test_support {
+    use super::*;
+
+    /// A game on the real world.yaml with one fresh player in `room`.
+    pub fn game_with_player(username: &str, room: &str) -> GameState {
+        let mut player = Player::new(username);
+        player.current_room = room.to_string();
+        GameState {
+            world: World::load_world(),
+            players: HashMap::from([(username.to_string(), player)]),
+            npc_hp: HashMap::new(),
+        }
+    }
+
+    /// Body of an `OK` reply. Panics on `ERR`, failing the test.
+    pub fn ok_body(response: Response) -> String {
+        match response {
+            Response::Ok(body) => body,
+            Response::Err { code, message } => panic!("expected OK, got ERR {} {}", code, message),
+        }
+    }
 }
