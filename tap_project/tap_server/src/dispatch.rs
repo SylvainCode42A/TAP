@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use crate::{Command, Response, GameState, Player};
-use crate::{combat, quest};
+use crate::{combat, group, quest};
 
 pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: &Option<String>) -> Response {
     match cmd {
@@ -177,9 +177,26 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             Response::Ok(format!("players={}", gs.players.len()))
         },
 
-        Command::GroupInvite { username } => Response::Err { code: 404, message: format!("Group not found to invit {}", username) },
-        Command::GroupJoin {group_id} => Response::Err { code: 404, message: format!("{} not found", group_id) },
-        Command::GroupLeave => Response::Err { code: 404, message: "Can't leave this group".to_string() },
+        Command::GroupCreate => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => group::create(&mut game_state.lock().unwrap(), username),
+        },
+
+        Command::GroupInvite { username: target } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => group::invite(&mut game_state.lock().unwrap(), username, &target),
+        },
+
+        // RFC 5.3.3: the argument of GROUP JOIN is the leader's name.
+        Command::GroupJoin { group_id: leader } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => group::join(&mut game_state.lock().unwrap(), username, &leader),
+        },
+
+        Command::GroupLeave => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => group::leave(&mut game_state.lock().unwrap(), username),
+        },
         Command::ChatGlobal { message } => Response::Err { code: 404, message: format!("ChatGlobal not found to send {}", message) },
         Command::ChatRoom { message } => Response::Err { code: 404, message: format!("ChatRoom not found to send {}", message) },
         Command::ChatGroup { message } => Response::Err { code: 404, message: format!("ChatGroup not found to send {}", message) },
