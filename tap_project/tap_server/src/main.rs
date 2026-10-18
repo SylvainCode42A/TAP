@@ -47,6 +47,7 @@ pub struct Npc {
     pub description: String,
     pub dialogue: Vec<String>,
     pub stats: HashMap<String, u32>,
+    /// True for enemies: only they accept `ATTACK`. Absent in YAML: false.
     #[serde(default)]
     pub hostile: bool,
 }
@@ -57,10 +58,13 @@ pub struct Quest {
     pub description: String,
     pub objectives: Vec<String>,
     pub rewards: Vec<String>,
+    /// Id of the NPC that gives and takes back this quest.
     #[serde(default)]
     pub giver: String,
+    /// Item that must be in the inventory to turn the quest in.
     #[serde(default)]
     pub requires_item: Option<String>,
+    /// NPC id the player must have beaten to turn the quest in.
     #[serde(default)]
     pub requires_kill: Option<String>,
 }
@@ -104,12 +108,16 @@ pub struct Player {
     pub inventory: Vec<String>,
     pub hp: u32,
     pub talk_progress: HashMap<String, usize>,
+    /// NPC id fought in the last round, None outside combat.
     pub in_combat: Option<String>,
+    /// NPC ids this player has beaten at least once.
     pub kills: Vec<String>,
+    /// Quests taken, by quest id. A quest never taken has no entry.
     pub quests: HashMap<String, quest::QuestStatus>,
 }
 
 impl Player {
+    /// A fresh player: full health, empty inventory, at the entrance.
     pub fn new(username: &str) -> Player {
         Player {
             username: username.to_string(),
@@ -127,6 +135,8 @@ impl Player {
 pub struct GameState {
     pub world: World,
     pub players: HashMap<String, Player>,
+    /// Current hp of each NPC hit at least once, by NPC id. An NPC never
+    /// hit has no entry: its hp is still the `hp` stat of world.yaml.
     pub npc_hp: HashMap<String, u32>,
 }
 
@@ -171,6 +181,7 @@ mod game_stress;
 mod test_support {
     use super::*;
 
+    /// A game on the real world.yaml with one fresh player in `room`.
     pub fn game_with_player(username: &str, room: &str) -> GameState {
         let mut player = Player::new(username);
         player.current_room = room.to_string();
@@ -181,6 +192,7 @@ mod test_support {
         }
     }
 
+    /// Body of an `OK` reply. Panics on `ERR`, failing the test.
     pub fn ok_body(response: Response) -> String {
         match response {
             Response::Ok(body) => body,

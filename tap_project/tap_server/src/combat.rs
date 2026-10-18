@@ -1,31 +1,47 @@
-// -- Combat : ATTACK and STATUS ----------------------------------------------
-//
-// One ATTACK is one full round: the player hits, then the NPC hits back if it
-// is still alive. No timer, no initiative roll: the turn order is the order
-// commands reach the server, which the world lock already serialises.
-//
-// Owns: NPC lookup in a room, damage, death and respawn, the STATUS report.
-// Does NOT own: parsing, sending the reply, broadcasting to the room.
+//! Combat: the `ATTACK` and `STATUS` commands.
+//!
+//! One `ATTACK` is one full round: the player hits, then the NPC hits back
+//! if it is still alive. There is no timer and no initiative roll: turns
+//! follow the order in which commands reach the server, which the world lock
+//! already serialises.
+//!
+//! - Owns: NPC lookup in a room, damage, death and respawn, the `STATUS`
+//!   report.
+//! - Does NOT own: parsing, sending the reply, broadcasting to the room.
 
 use crate::{GameState, Response};
 
-// -- Tuning ------------------------------------------------------------------
+// MARK: - Tuning
 
+/// Hit points of a fresh player, and the cap after any heal.
 pub const MAX_HP: u32 = 100;
+
+/// Hit points a player gets back after falling to 0.
 pub const RESPAWN_HP: u32 = 50;
+
+/// Room where a fallen player respawns: the dungeon entrance, out of reach
+/// of the monster.
 pub const RESPAWN_ROOM: &str = "entrance";
 
+/// Damage of a bare-handed hit.
 const BASE_DAMAGE: u32 = 5;
+
+/// Extra damage while the `sword` item is in the inventory.
 const SWORD_BONUS: u32 = 10;
 
-// Used when an NPC of world.yaml has no `attack` stat.
+/// Counter-attack damage of an NPC whose `world.yaml` entry has no `attack`
+/// stat.
 const DEFAULT_NPC_ATTACK: u32 = 5;
 
-// -- NPC lookup --------------------------------------------------------------
+// MARK: - NPC lookup
 
-// Finds an NPC spawned in `room` whose id ("monster") or display name
-// ("Monster") matches `query`, ignoring case and surrounding spaces.
-// Returns the NPC id, or None when no NPC of that room matches.
+/// Finds the NPC of `room` that `query` names.
+///
+/// `query` matches an NPC id (`monster`) or its display name (`Monster`),
+/// ignoring ASCII case and surrounding spaces. Only NPCs spawned in `room`
+/// are candidates: an NPC elsewhere in the world is not found.
+///
+/// Returns the NPC id, or `None` when no NPC of `room` matches.
 pub fn find_npc_in_room(gs: &GameState, room: &str, query: &str)
     -> Option<String>
 {
@@ -46,13 +62,27 @@ pub fn find_npc_in_room(gs: &GameState, room: &str, query: &str)
     None
 }
 
-// -- ATTACK ------------------------------------------------------------------
+// MARK: - ATTACK
 
-// Reply: {"attacker_hp", "target_hp", "damage", "status"}, RFC 5.4.5.
-// status is one of:
-//   combat    both sides still standing
-//   victory   the NPC fell; it rises again at full health
-//   defeated  the player fell and respawned at the entrance
+/// Plays one combat round of `username` against `target`, RFC 5.4.5.
+///
+/// The player deals [`BASE_DAMAGE`], plus [`SWORD_BONUS`] with the sword.
+/// If the NPC survives, it hits back with its `attack` stat.
+///
+/// Reply body: `{"attacker_hp", "target_hp", "damage", "status"}`, where
+/// `status` is one of:
+///
+/// | status     | meaning                                                   |
+/// |------------|-----------------------------------------------------------|
+/// | `combat`   | both sides still standing                                 |
+/// | `victory`  | the NPC fell; it rises again at full health               |
+/// | `defeated` | the player fell and respawned in [`RESPAWN_ROOM`]         |
+///
+/// # Errors
+///
+/// - `404 Player not CONNECTED`: `username` is not in the game.
+/// - `404 NPC_NOT_FOUND`: no NPC of the player's room matches `target`.
+/// - `405 NPC_NOT_HOSTILE`: the NPC exists but is not an enemy.
 pub fn attack(gs: &mut GameState, username: &str, target: &str) -> Response {
 
     // 1. Where is the player?
@@ -66,8 +96,9 @@ pub fn attack(gs: &mut GameState, username: &str, target: &str) -> Response {
         None => return npc_not_found(),
         Some(id) => id,
     };
-    // A room may spawn an NPC that world.yaml forgot to define: answer 404
-    // instead of panicking, a panic here would poison the world lock.
+    // INVARIANT: never panic here. A room may spawn an NPC that world.yaml
+    // forgot to define, and a panic would poison the world lock for every
+    // client. Answer 404 instead.
     let Some(npc) = gs.world.world.npcs.get(&npc_id) else {
         return npc_not_found();
     };
@@ -90,8 +121,9 @@ pub fn attack(gs: &mut GameState, username: &str, target: &str) -> Response {
         damage += SWORD_BONUS;
     }
 
-    // NPC health lives in GameState, not in the static world: first hit
-    // starts it at full health. saturating_sub stops at 0, never wraps.
+    // NPC health lives in GameState, not in the static world: the first hit
+    // starts it at full health. saturating_sub stops at 0, never wraps
+    // around to 4 billion as a plain u32 subtraction would.
     let npc_hp = gs.npc_hp.entry(npc_id.clone()).or_insert(npc_max_hp);
     *npc_hp = npc_hp.saturating_sub(damage);
     let target_hp = *npc_hp;
@@ -128,10 +160,16 @@ pub fn attack(gs: &mut GameState, username: &str, target: &str) -> Response {
     ))
 }
 
-// -- STATUS ------------------------------------------------------------------
+// MARK: - STATUS
 
-// Reply: {"hp", "max_hp", "status"}, RFC 5.4.6.
-// status is "combat" while fighting, "wounded" below max hp, else "healthy".
+/// Reports the health of `username`, RFC 5.4.6.
+///
+/// Reply body: `{"hp", "max_hp", "status"}`, where `status` is `combat`
+/// while fighting, `wounded` below [`MAX_HP`], else `healthy`.
+///
+/// # Errors
+///
+/// - `404 Player not CONNECTED`: `username` is not in the game.
 pub fn status(gs: &GameState, username: &str) -> Response {
     let Some(player) = gs.players.get(username) else {
         return not_connected();
@@ -151,17 +189,19 @@ pub fn status(gs: &GameState, username: &str) -> Response {
     ))
 }
 
-// -- Error replies -----------------------------------------------------------
+// MARK: - Error replies
 
+/// `404 Player not CONNECTED`, same wording as `dispatch.rs`.
 pub fn not_connected() -> Response {
     Response::Err { code: 404, message: "Player not CONNECTED".to_string() }
 }
 
+/// `404 NPC_NOT_FOUND`, the RFC 8.2 message for an NPC absent from the room.
 pub fn npc_not_found() -> Response {
     Response::Err { code: 404, message: "NPC_NOT_FOUND".to_string() }
 }
 
-// -- Tests -------------------------------------------------------------------
+// MARK: - Tests
 
 #[cfg(test)]
 mod tests {
@@ -182,6 +222,7 @@ mod tests {
         assert!(matches!(reply, Response::Err { code: 405, .. }));
     }
 
+    /// Monster has 20 hp, the sword hits for 15: 20 -> 5 -> dead.
     #[test]
     fn sword_kills_monster_in_two_rounds() {
         let mut gs = game_with_player("alice", "monster_room");

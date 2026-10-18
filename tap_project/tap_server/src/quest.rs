@@ -1,30 +1,40 @@
-// -- Quests : QUEST and QUESTS -----------------------------------------------
-//
-// A quest is given by one NPC (`giver` in world.yaml) and is done when its
-// conditions hold: an item in the inventory (`requires_item`) and/or an NPC
-// beaten (`requires_kill`). The server checks them, never the client.
-//
-// Life of a quest, per player:
-//   (not taken) --QUEST npc--> active --QUEST npc, conditions met--> completed
-//
-// Owns: per-player quest state, progress, the JSON of QUEST and QUESTS.
-// Does NOT own: NPC lookup (combat.rs), parsing, sending the reply.
+//! Quests: the `QUEST` and `QUESTS` commands.
+//!
+//! A quest is given by one NPC (`giver` in `world.yaml`) and is done when its
+//! conditions hold: an item in the inventory (`requires_item`) and/or an NPC
+//! beaten (`requires_kill`). The server checks them, never the client.
+//!
+//! Life of a quest, per player:
+//!
+//! ```text
+//! (not taken) --QUEST npc--> active --QUEST npc, conditions met--> completed
+//! ```
+//!
+//! - Owns: per-player quest state, progress, the JSON of `QUEST` and
+//!   `QUESTS`.
+//! - Does NOT own: NPC lookup ([`combat::find_npc_in_room`]), parsing,
+//!   sending the reply.
 
 use crate::combat::{self, MAX_HP};
 use crate::{GameState, Player, Quest, Response};
 
-// -- Quest state -------------------------------------------------------------
+// MARK: - Quest state
 
+/// Where a player stands on one quest. A quest never taken has no entry.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum QuestStatus {
+    /// Accepted, conditions not yet turned in.
     Active,
+    /// Turned in and rewarded. Final: never goes back to `Active`.
     Completed,
 }
 
-// -- Progress ----------------------------------------------------------------
+// MARK: - Progress
 
-// Returns (conditions met, conditions needed) for this player.
-// A quest with no condition is (0, 0): done as soon as it is taken.
+/// Counts the conditions of `quest` that `player` meets.
+///
+/// Returns `(met, needed)`. A quest with no condition is `(0, 0)`: done as
+/// soon as it is taken.
 fn progress(player: &Player, quest: &Quest) -> (usize, usize) {
     let mut done = 0;
     let mut needed = 0;
@@ -44,11 +54,13 @@ fn progress(player: &Player, quest: &Quest) -> (usize, usize) {
     (done, needed)
 }
 
-// -- JSON helpers ------------------------------------------------------------
+// MARK: - JSON helpers
 
-// Wraps `text` in double quotes and escapes what JSON forbids raw inside a
-// string: quote, backslash, control characters. Descriptions come from
-// world.yaml and may contain any of them.
+/// Quotes `text` as a JSON string.
+///
+/// Escapes what JSON forbids raw inside a string: double quote, backslash,
+/// control characters. Descriptions come from `world.yaml` and may contain
+/// any of them.
 fn json_string(text: &str) -> String {
     let mut out = String::from("\"");
     for c in text.chars() {
@@ -66,8 +78,8 @@ fn json_string(text: &str) -> String {
     out
 }
 
-// Reply body of QUEST: {"quest_id", "description", "reward", "status"},
-// RFC 5.4.7.
+/// Builds the reply body of `QUEST`, RFC 5.4.7:
+/// `{"quest_id", "description", "reward", "status"}`.
 fn quest_json(id: &str, quest: &Quest, status: &str) -> String {
     format!(
         "{{\"quest_id\": {}, \"description\": {}, \
@@ -79,12 +91,27 @@ fn quest_json(id: &str, quest: &Quest, status: &str) -> String {
     )
 }
 
-// -- QUEST <npc> -------------------------------------------------------------
+// MARK: - QUEST
 
-// The same command both accepts and turns in, so no extra command is needed:
-//   1. an active quest of this NPC -> turn it in if done, else report it
-//   2. else a quest never taken    -> accept it
-//   3. else                        -> 406 NO_QUEST_AVAILABLE
+/// Accepts or turns in the next quest of the NPC that `npc_query` names,
+/// RFC 5.4.7.
+///
+/// One command does both, so no extra command is needed:
+///
+/// 1. an active quest of this NPC: turn it in if its conditions hold, else
+///    report it still `active`;
+/// 2. else a quest never taken: accept it, `active`;
+/// 3. else nothing left: `406`.
+///
+/// Turning in fully heals the player. A quest never hands out an item:
+/// items are unique in the world.
+///
+/// # Errors
+///
+/// - `404 Player not CONNECTED`: `username` is not in the game.
+/// - `404 NPC_NOT_FOUND`: no NPC of the player's room matches `npc_query`.
+/// - `406 NO_QUEST_AVAILABLE`: every quest of this NPC is completed, or it
+///   gives none.
 pub fn quest(gs: &mut GameState, username: &str, npc_query: &str)
     -> Response
 {
@@ -122,8 +149,6 @@ pub fn quest(gs: &mut GameState, username: &str, npc_query: &str)
         if done < needed {
             return Response::Ok(quest_json(id, quest, "active"));
         }
-        // Reward: a full heal. Items stay unique in the world, so a quest
-        // never hands one out.
         player.quests.insert(id.clone(), QuestStatus::Completed);
         player.hp = MAX_HP;
         return Response::Ok(quest_json(id, quest, "completed"));
@@ -142,10 +167,21 @@ pub fn quest(gs: &mut GameState, username: &str, npc_query: &str)
     Response::Err { code: 406, message: "NO_QUEST_AVAILABLE".to_string() }
 }
 
-// -- QUESTS ------------------------------------------------------------------
+// MARK: - QUESTS
 
-// Reply: a JSON array, RFC 5.4.8. Active quests carry "progress": "1/2",
-// completed ones do not.
+/// Lists every quest `username` has taken, RFC 5.4.8.
+///
+/// Reply body: a JSON array sorted by quest id. Active quests carry
+/// `"progress": "met/needed"`, completed ones do not:
+///
+/// ```text
+/// [{"quest_id": "free_prisoner", "status": "completed"},
+///  {"quest_id": "treasure_quest", "status": "active", "progress": "1/2"}]
+/// ```
+///
+/// # Errors
+///
+/// - `404 Player not CONNECTED`: `username` is not in the game.
 pub fn quests(gs: &GameState, username: &str) -> Response {
     let Some(player) = gs.players.get(username) else {
         return combat::not_connected();
@@ -179,7 +215,7 @@ pub fn quests(gs: &GameState, username: &str) -> Response {
     Response::Ok(format!("[{}]", entries.join(", ")))
 }
 
-// -- Tests -------------------------------------------------------------------
+// MARK: - Tests
 
 #[cfg(test)]
 mod tests {
@@ -193,6 +229,7 @@ mod tests {
         assert!(matches!(reply, Response::Err { code: 404, .. }));
     }
 
+    /// Full cycle of `free_prisoner`: accept, pending, done, nothing left.
     #[test]
     fn free_prisoner_accept_then_complete() {
         let mut gs = game_with_player("alice", "secret_cell");
@@ -215,6 +252,7 @@ mod tests {
         assert!(ok_body(quests(&gs, "alice")).contains("\"completed\""));
     }
 
+    /// `treasure_quest` needs both conditions: the kill alone is 1/2.
     #[test]
     fn treasure_quest_needs_kill_and_item() {
         let mut gs = game_with_player("alice", "entrance");

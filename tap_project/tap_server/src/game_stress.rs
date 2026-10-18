@@ -1,12 +1,13 @@
-// -- Stress tests : combat and quests ----------------------------------------
-//
-// Two kinds of tests:
-//   - edge cases: odd names, unknown players, shared monster health, ...
-//   - a random campaign: thousands of random actions by four players, with
-//     every invariant checked after each action.
-//
-// The campaign moves players and edits inventories by hand: it tests
-// combat.rs and quest.rs, not MOVE, TAKE and DROP.
+//! Stress tests of [`combat`] and [`quest`].
+//!
+//! Two kinds of tests:
+//!
+//! - edge cases: odd names, unknown players, shared monster health, ...
+//! - a random campaign: thousands of random actions by four players, with
+//!   every invariant checked after each action.
+//!
+//! The campaign moves players and edits inventories by hand: it tests
+//! `combat.rs` and `quest.rs`, not `MOVE`, `TAKE` and `DROP`.
 
 use std::collections::HashMap;
 
@@ -15,24 +16,27 @@ use crate::quest::{self, QuestStatus};
 use crate::test_support::{game_with_player, ok_body};
 use crate::{GameState, Player, Quest, Response, Spawn};
 
-// -- Helpers -----------------------------------------------------------------
+// MARK: - Helpers
 
+/// Adds a fresh player named `username` in `room`.
 fn add_player(gs: &mut GameState, username: &str, room: &str) {
     let mut player = Player::new(username);
     player.current_room = room.to_string();
     gs.players.insert(username.to_string(), player);
 }
 
+/// Puts `item` in the inventory of `username`, as `TAKE` would.
 fn give(gs: &mut GameState, username: &str, item: &str) {
     let player = gs.players.get_mut(username).unwrap();
     player.inventory.push(item.to_string());
 }
 
+/// True when `reply` is an error with code `expected`.
 fn is_err(reply: Response, expected: u16) -> bool {
     matches!(reply, Response::Err { code, .. } if code == expected)
 }
 
-// -- Edge cases --------------------------------------------------------------
+// MARK: - Edge cases
 
 #[test]
 fn npc_name_ignores_case_and_surrounding_spaces() {
@@ -138,13 +142,15 @@ fn quest_without_conditions_completes_on_second_call() {
     assert!(third.contains("\"treasure_quest\""));
 }
 
-// -- Random campaign ---------------------------------------------------------
+// MARK: - Random campaign
 
-// xorshift64: a tiny deterministic random generator, no external crate.
-// Same seed, same sequence: a failing campaign can be replayed exactly.
+/// Tiny deterministic random generator (xorshift64), no external crate.
+///
+/// Same seed, same sequence: a failing campaign can be replayed exactly.
 struct Rng(u64);
 
 impl Rng {
+    /// Next pseudo-random number. The seed must not be 0.
     fn next(&mut self) -> u64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -152,25 +158,42 @@ impl Rng {
         self.0
     }
 
+    /// Picks one element of `items`, uniformly enough for a test.
     fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
         let index = self.next() % items.len() as u64;
         items[index as usize]
     }
 }
 
+/// The four players of every campaign.
 const PLAYERS: [&str; 4] = ["alice", "bob", "carol", "dave"];
+/// The 8 rooms of `world.yaml`, where a campaign teleports players.
 const ROOMS: [&str; 8] = [
     "entrance", "corridor", "guard_room", "library",
     "armory", "monster_room", "treasure", "secret_cell",
 ];
+/// Targets of `ATTACK` and `QUEST`: valid ids and names in several cases,
+/// plus an unknown NPC, an empty name and an emoji.
 const NAMES: [&str; 9] = [
     "monster", "Monster", " MONSTER ", "merchant", "prisoner",
     "Prisoner", "ghost", "", "\u{1F47E}",
 ];
+/// Items a campaign gives and takes away by hand.
 const ITEMS: [&str; 3] = ["sword", "cell_key", "treasure"];
 
-// Plays `steps` random actions from `seed`, checks every invariant after each
-// one, and returns every reply in order.
+/// Plays `steps` random actions from `seed` and returns every reply in order.
+///
+/// After each action, checks:
+///
+/// 1. the reply is a balanced JSON body or an error 404, 405 or 406;
+/// 2. every player has 1 to [`MAX_HP`] hp, and fights or has killed only
+///    hostile NPCs;
+/// 3. every stored NPC hp is 1 to its max: 0 is never stored;
+/// 4. a completed quest stays completed forever.
+///
+/// # Panics
+///
+/// On the first broken invariant, naming the step that broke it.
 fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
     let mut gs = game_with_player("alice", "entrance");
     for name in &PLAYERS[1..] {
@@ -269,8 +292,10 @@ fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
     transcript
 }
 
-// 20 campaigns of 20 000 actions. Also checks the campaign really reached
-// every outcome: a run that never kills anything would prove nothing.
+/// 20 campaigns of 20 000 actions.
+///
+/// Also checks the campaign really reached every outcome: a run that never
+/// kills anything would prove nothing.
 #[test]
 fn random_campaign_keeps_invariants() {
     let outcomes = [
