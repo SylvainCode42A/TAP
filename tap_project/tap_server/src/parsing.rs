@@ -230,6 +230,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 }
 
                 if should_quit {
+                    if let Some(username) = &current_username {
+                        let mut gs = game_state.lock().unwrap();
+                        gs.players.remove(username);
+                    }
                     break;
                 }
             },
