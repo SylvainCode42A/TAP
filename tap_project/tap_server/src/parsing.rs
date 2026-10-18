@@ -23,11 +23,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
 
                 if actions.get(0) == Some(&"CONNECT") {
                     matched = true;
-                    if actions.len() == 2 {
-                        current_username = Some(actions[1].to_string());
+                    if current_username.is_some() {
+                        let current = current_username.as_ref().unwrap();
+                        send_error_mess(stream, "401", &format!("{} already connected, use QUIT first", current));
+                    } else if actions.len() == 2 {
                         cmd = Some(Command::Connect { username: actions[1].to_string() });
-                    }
-                    else {
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CONNECT");
                     }
                 }
@@ -206,9 +207,13 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 }
 
                 if let Some(c) = cmd {
+                    let is_connect = matches!(c, Command::Connect { .. });
                     let resp = dispatch::dispatch(c, &game_state, &current_username);
                     match resp {
                         Response::Ok(msg) => {
+                            if is_connect {
+                                current_username = Some(actions[1].to_string());
+                            }
                             let message = format!("OK: {}", msg);
                             println!("{}", message);
                             stream.write_all(message.as_bytes()).expect("Failed to send response");
