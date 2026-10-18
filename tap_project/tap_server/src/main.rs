@@ -9,6 +9,7 @@ mod combat;
 mod dispatch;
 mod parsing;
 mod quest;
+mod world_check;
 
 #[derive(Deserialize)]
 pub struct World {
@@ -148,8 +149,23 @@ impl World {
 }
 
 fn main() {
+    let world = World::load_world();
+
+    // Refuse to start on a broken world, listing every problem at once.
+    let errors = world_check::validate(&world);
+    if !errors.is_empty() {
+        for error in &errors {
+            eprintln!("ERROR world.yaml: {}", error);
+        }
+        eprintln!(
+            "ERROR world.yaml: {} problem(s), server not started",
+            errors.len()
+        );
+        std::process::exit(1);
+    }
+
     let game_state = GameState {
-        world: World::load_world(),
+        world,
         players: HashMap::new(),
         npc_hp: HashMap::new(),
     };

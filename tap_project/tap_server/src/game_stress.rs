@@ -325,3 +325,33 @@ fn random_campaign_keeps_invariants() {
 fn random_campaign_is_deterministic() {
     assert_eq!(random_campaign(42, 5_000), random_campaign(42, 5_000));
 }
+
+// MARK: - WHO
+
+/// `WHO` counts every connected player, wherever they stand (RFC 5.2.2).
+#[test]
+fn who_counts_every_player() {
+    use std::sync::{Arc, Mutex};
+    use crate::{dispatch, Command};
+
+    let mut gs = game_with_player("alice", "entrance");
+    add_player(&mut gs, "bob", "treasure");
+    add_player(&mut gs, "carol", "secret_cell");
+    let shared = Arc::new(Mutex::new(gs));
+    let caller = Some("alice".to_string());
+
+    let reply = dispatch::dispatch(Command::Who, &shared, &caller);
+    assert_eq!(ok_body(reply), "players=3");
+}
+
+// MARK: - Heavy campaigns
+
+/// 500 campaigns of 20 000 actions: 10 million actions. Too slow for every
+/// run: `cargo test --release -- --ignored`.
+#[test]
+#[ignore]
+fn heavy_random_campaign() {
+    for seed in 1..=500 {
+        random_campaign(seed * 0x9E37_79B9 + 7, 20_000);
+    }
+}
