@@ -22,7 +22,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 let mut cmd: Option<Command> = None;
                 let actions: Vec<&str> = line.split_whitespace().collect();
 
-                if actions.get(0) == Some(&"CONNECT") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("CONNECT".to_string()) {
                     matched = true;
                     if current_username.is_some() {
                         let current = current_username.as_ref().unwrap();
@@ -34,12 +34,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if line == "LOOK\n" {
+                if line.trim().to_uppercase() == "LOOK" {
                     matched = true;
                     cmd = Some(Command::Look);
                 }
 
-                if actions.get(0) == Some(&"MOVE") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("MOVE".to_string()) {
                     matched = true;
                     if actions.len() == 2 {
                         let upper = actions[1].trim().to_uppercase();
@@ -64,7 +64,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if actions.get(0) == Some(&"TAKE") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("TAKE".to_string()) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
@@ -75,7 +75,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if actions.get(0) == Some(&"DROP") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("DROP".to_string()) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
@@ -86,12 +86,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if line == "INVENTORY\n" {
+                if line.trim().to_uppercase() == "INVENTORY" {
                     matched = true;
                     cmd = Some(Command::Inventory);
                 }
 
-                if actions.get(0) == Some(&"TALK") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("TALK".to_string()) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
@@ -102,7 +102,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if actions.get(0) == Some(&"ATTACK") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("ATTACK".to_string()) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
@@ -113,12 +113,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if line == "STATUS\n" {
+                if line.trim().to_uppercase() == "STATUS" {
                     matched = true;
                     cmd = Some(Command::Status);
                 }
 
-                if actions.get(0) == Some(&"QUEST") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("QUEST".to_string()) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
@@ -129,17 +129,17 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if line == "QUESTS\n" {
+                if line.trim().to_uppercase() == "QUESTS" {
                     matched = true;
                     cmd = Some(Command::Quests);
                 }
 
-                if line == "WHO\n" {
+                if line.trim().to_uppercase() == "WHO" {
                     matched = true;
                     cmd = Some(Command::Who);
                 }
 
-                if actions.get(0) == Some(&"GROUP") && actions.get(1) == Some(&"INVITE") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("GROUP".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("INVITE".to_string()) {
                     matched = true;
                     if actions.len() == 3 {
                         cmd = Some(Command::GroupInvite { username: actions[2].to_string() });
@@ -149,7 +149,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if actions.get(0) == Some(&"GROUP") && actions.get(1) == Some(&"JOIN") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("GROUP".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("JOIN".to_string()) {
                     matched = true;
                     if actions.len() == 3 {
                         cmd = Some(Command::GroupJoin { group_id: actions[2].to_string() });
@@ -159,17 +159,17 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if line == "GROUP CREATE\n" {
+                if line.trim().to_uppercase() == "GROUP CREATE" {
                     matched = true;
                     cmd = Some(Command::GroupCreate);
                 }
 
-                if line == "GROUP LEAVE\n" {
+                if line.trim().to_uppercase() == "GROUP LEAVE" {
                     matched = true;
                     cmd = Some(Command::GroupLeave);
                 }
 
-                if actions.get(0) == Some(&"CHAT") && actions.get(1) == Some(&"GLOBAL") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("CHAT".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("GLOBAL".to_string()) {
                     matched = true;
                     if actions.len() > 2 {
                         let rest = actions[2..].join(" ");
@@ -180,7 +180,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if actions.get(0) == Some(&"CHAT") && actions.get(1) == Some(&"ROOM") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("CHAT".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("ROOM".to_string()) {
                     matched = true;
                     if actions.len() > 2 {
                         let rest = actions[2..].join(" ");
@@ -191,7 +191,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if actions.get(0) == Some(&"CHAT") && actions.get(1) == Some(&"GROUP") {
+                if actions.get(0).map(|s| s.to_uppercase()) == Some("CHAT".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("GROUP".to_string()) {
                     matched = true;
                     if actions.len() > 2 {
                         let rest = actions[2..].join(" ");
@@ -202,7 +202,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
-                if line == "QUIT\n" {
+                if line.trim().to_uppercase() == "QUIT" {
                     matched = true;
                     cmd = Some(Command::Quit);
                     should_quit = true;
