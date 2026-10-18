@@ -214,8 +214,8 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             if is_connect {
                                 current_username = Some(actions[1].to_string());
                             }
-                            let message = format!("OK: {}", msg);
-                            println!("{}", message);
+                            let message = format!("OK {}\n", msg);
+                            println!("{}", message.trim());
                             stream.write_all(message.as_bytes()).expect("Failed to send response");
                         }
                         Response::Err { code, message } => {
