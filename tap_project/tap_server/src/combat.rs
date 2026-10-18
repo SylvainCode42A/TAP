@@ -30,7 +30,9 @@ pub fn attack(gs: &mut GameState, username: &str, target: &str) -> Response {
         None => return Response::Err { code: 404, message: "NPC_NOT_FOUND".to_string() },
         Some(id) => id,
     };
-    let npc = &gs.world.world.npcs[&npc_id];
+    let Some(npc) = gs.world.world.npcs.get(&npc_id) else {
+        return Response::Err { code: 404, message: "NPC_NOT_FOUND".to_string() };
+    };
     if !npc.hostile {
         return Response::Err { code: 405, message: "NPC_NOT_HOSTILE".to_string() };
     }

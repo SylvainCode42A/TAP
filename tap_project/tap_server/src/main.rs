@@ -165,6 +165,9 @@ pub fn send_error_mess(stream: &mut TcpStream, t_error: &str, error: &str) {
 }
 
 #[cfg(test)]
+mod game_stress;
+
+#[cfg(test)]
 mod test_support {
     use super::*;
 
