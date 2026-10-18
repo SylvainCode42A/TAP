@@ -59,6 +59,7 @@ world:
       description: "Gold and jewels glitter in the torchlight."
       exits:
         west: "monster_room"
+      items: ["treasure"]
 
     secret_cell:
       name: "Secret Cell"
@@ -90,6 +91,11 @@ world:
       description: "A worn shield mounted on display. Cannot be taken."
       obtainable: false
 
+    treasure:
+      name: "Treasure"
+      description: "A chest of gold guarded by the monster."
+      obtainable: true
+
   npcs:
     merchant:
       name: "Merchant"
@@ -109,18 +115,25 @@ world:
       name: "Monster"
       description: "A fearsome creature guarding the treasure."
       dialogue: ["Grrrr..."]
+      hostile: true
       stats:
         hp: 20
+        attack: 12
 
   quests:
     free_prisoner:
       name: "Free the Prisoner"
       description: "Take the cell key and free the prisoner."
       objectives: ["Take the cell_key", "Go to the secret_cell", "Talk to the prisoner"]
-      rewards: ["sword"]
+      rewards: ["Full heal"]
+      giver: "prisoner"
+      requires_item: "cell_key"
 
     treasure_quest:
       name: "The Treasure"
       description: "Defeat the monster and claim the treasure."
       objectives: ["Defeat the monster", "Take the treasure"]
+      giver: "merchant"
+      requires_kill: "monster"
+      requires_item: "treasure"
       rewards: ["victory"]

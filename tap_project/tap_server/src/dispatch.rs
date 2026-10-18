@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 use crate::{Command, Response, GameState, Player};
+use crate::{combat, quest};
 
 pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: &Option<String>) -> Response {
     match cmd {
@@ -9,14 +9,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             if gs.players.contains_key(&username) {
                 Response::Err { code: 401, message: format!("{} already connected", username) }
             } else {
-                let player = Player {
-                    username: username.clone(),
-                    current_room: "entrance".to_string(),
-                    inventory: vec![],
-                    hp: 100,
-                    talk_progress: HashMap::new(),
-                };
-                gs.players.insert(username.clone(), player);
+                gs.players.insert(username.clone(), Player::new(&username));
                 Response::Ok(format!("{} connected", username))
             }
         },
@@ -55,6 +48,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                                         Some(new_room) => {
                                             if let Some(p) = gs.players.get_mut(username) {
                                                 p.current_room = new_room.clone();
+                                                p.in_combat = None;
                                             }
                                             Response::Ok(format!("room=next_is_{}", new_room))
                                         }
@@ -159,13 +153,25 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             }
         },
 
-        Command::Attack { target } => {
-            Response::Err { code: 404, message: format!("{} not found in room", target) }
+        Command::Attack { target } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => combat::attack(&mut game_state.lock().unwrap(), username, &target),
         },
 
-        Command::Status => Response::Err { code: 404, message: "Status can't check".to_string() },
-        Command::Quest { quest_id } => Response::Err { code: 404, message: format!("{} not found in room", quest_id) },
-        Command::Quests => Response::Err { code: 404, message: "Quests not set at the time".to_string() },
+        Command::Status => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => combat::status(&game_state.lock().unwrap(), username),
+        },
+
+        Command::Quest { quest_id } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => quest::quest(&mut game_state.lock().unwrap(), username, &quest_id),
+        },
+
+        Command::Quests => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => quest::quests(&game_state.lock().unwrap(), username),
+        },
         Command::Who => Response::Err { code: 404, message: "Nobody in world".to_string() },
 
         Command::GroupInvite { username } => Response::Err { code: 404, message: format!("Group not found to invit {}", username) },
