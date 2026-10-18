@@ -219,6 +219,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                         Response::Ok(msg) => {
                             if is_connect {
                                 current_username = Some(actions[1].to_string());
+                                if let Ok(cloned) = stream.try_clone() {
+                                    let mut gs = game_state.lock().unwrap();
+                                    gs.senders.insert(actions[1].to_string(), cloned);
+                                }
                             }
                             let message = format!("OK {}\n", msg);
                             println!("{}", message.trim());
@@ -234,6 +238,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     if let Some(username) = &current_username {
                         let mut gs = game_state.lock().unwrap();
                         gs.players.remove(username);
+                        gs.senders.remove(username);
                     }
                     break;
                 }

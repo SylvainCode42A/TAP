@@ -143,6 +143,7 @@ pub struct GameState {
     pub npc_hp: HashMap<String, u32>,
     /// Every group, by group id (`grp.<founder>`).
     pub groups: HashMap<String, group::Group>,
+    pub senders: HashMap<String, TcpStream>,
 }
 
 impl World {
@@ -173,6 +174,7 @@ fn main() {
         players: HashMap::new(),
         npc_hp: HashMap::new(),
         groups: HashMap::new(),
+        senders: HashMap::new(),
     };
 
     let game_state = Arc::new(Mutex::new(game_state));
@@ -211,6 +213,7 @@ mod test_support {
             players: HashMap::from([(username.to_string(), player)]),
             npc_hp: HashMap::new(),
             groups: HashMap::new(),
+            senders: HashMap::new(),
         }
     }
 
