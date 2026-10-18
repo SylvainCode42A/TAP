@@ -180,6 +180,6 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
         Command::ChatGlobal { message } => Response::Err { code: 404, message: format!("ChatGlobal not found to send {}", message) },
         Command::ChatRoom { message } => Response::Err { code: 404, message: format!("ChatRoom not found to send {}", message) },
         Command::ChatGroup { message } => Response::Err { code: 404, message: format!("ChatGroup not found to send {}", message) },
-        Command::Quit => Response::Ok("OK goodbye".to_string()),
+        Command::Quit => Response::Ok("bye".to_string()),
     }
 }
