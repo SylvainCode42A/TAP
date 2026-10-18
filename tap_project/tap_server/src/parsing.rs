@@ -56,7 +56,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             cmd = Some(Command::Move { direction: actions[1].to_string() });
                         }
                         else {
-                            send_error_mess(stream, "406", "Invalid direction for MOVE");
+                            send_error_mess(stream, "301", "NO_EXIT");
                         }
                     }
                     else {
