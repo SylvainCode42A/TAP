@@ -172,7 +172,10 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
             Some(username) => quest::quests(&game_state.lock().unwrap(), username),
         },
-        Command::Who => Response::Err { code: 404, message: "Nobody in world".to_string() },
+        Command::Who => {
+            let gs = game_state.lock().unwrap();
+            Response::Ok(format!("players={}", gs.players.len()))
+        },
 
         Command::GroupInvite { username } => Response::Err { code: 404, message: format!("Group not found to invit {}", username) },
         Command::GroupJoin {group_id} => Response::Err { code: 404, message: format!("{} not found", group_id) },
