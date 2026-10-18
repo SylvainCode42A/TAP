@@ -7,7 +7,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
         Command::Connect { username } => {
             let mut gs = game_state.lock().unwrap();
             if gs.players.contains_key(&username) {
-                Response::Err { code: 401, message: format!("{} already connected", username) }
+                Response::Err { code: 201, message: "NAME_IN_USE".to_string() }
             } else {
                 gs.players.insert(username.clone(), Player::new(&username));
                 Response::Ok(format!("{} connected", username))
@@ -44,7 +44,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                                 None => Response::Err { code: 404, message: "Current room not found".to_string() },
                                 Some(room) => {
                                     match room.exits.get(&direction.to_lowercase()).cloned() {
-                                        None => Response::Err { code: 406, message: format!("No exit {} from here", direction) },
+                                        None => Response::Err { code: 301, message: "NO_EXIT".to_string() },
                                         Some(new_room) => {
                                             if let Some(p) = gs.players.get_mut(username) {
                                                 p.current_room = new_room.clone();
@@ -74,7 +74,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                         None => Response::Err { code: 404, message: "Current room not found".to_string() },
                         Some(room) => {
                             if !room.items.contains(&item) {
-                                Response::Err { code: 404, message: format!("{} not in this room", item) }
+                                Response::Err { code: 404, message: "ITEM_NOT_FOUND".to_string() }
                             } else {
                                 room.items.retain(|i| i != &item);
                                 if let Some(p) = gs.players.get_mut(username) {
@@ -102,7 +102,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                         Some(player) => player.inventory.contains(&item)
                     };
                     if !has_item {
-                        Response::Err { code: 404, message: format!("{} not in inventory", item) }
+                        Response::Err { code: 404, message: "ITEM_NOT_IN_INVENTORY".to_string() }
                     } else {
                         if let Some(player) = gs.players.get_mut(username) {
                             player.inventory.retain(|i| i != &item)
@@ -135,7 +135,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                 Some(username) => {
                     let mut gs = game_state.lock().unwrap();
                     match gs.world.world.npcs.get(&npc) {
-                        None => Response::Err { code: 404, message: format!("{} not found", npc) },
+                        None => Response::Err { code: 404, message: "NPC_NOT_FOUND".to_string() },
                         Some(npc_data) => {
                             let dialogue = npc_data.dialogue.clone();
                             match gs.players.get_mut(username) {
