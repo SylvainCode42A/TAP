@@ -7,6 +7,7 @@ use std::fs;
 use std::sync::{Arc, Mutex};
 mod combat;
 mod dispatch;
+mod group;
 mod parsing;
 mod quest;
 mod world_check;
@@ -89,6 +90,7 @@ pub enum Command {
     Quest { quest_id: String },
     Quests,
     Who,
+    GroupCreate,
     GroupInvite { username: String },
     GroupJoin { group_id: String },
     GroupLeave,
@@ -139,6 +141,8 @@ pub struct GameState {
     /// Current hp of each NPC hit at least once, by NPC id. An NPC never
     /// hit has no entry: its hp is still the `hp` stat of world.yaml.
     pub npc_hp: HashMap<String, u32>,
+    /// Every group, by group id (`grp.<founder>`).
+    pub groups: HashMap<String, group::Group>,
 }
 
 impl World {
@@ -168,6 +172,7 @@ fn main() {
         world,
         players: HashMap::new(),
         npc_hp: HashMap::new(),
+        groups: HashMap::new(),
     };
 
     let game_state = Arc::new(Mutex::new(game_state));
@@ -205,6 +210,7 @@ mod test_support {
             world: World::load_world(),
             players: HashMap::from([(username.to_string(), player)]),
             npc_hp: HashMap::new(),
+            groups: HashMap::new(),
         }
     }
 

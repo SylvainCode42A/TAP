@@ -158,6 +158,11 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     }
                 }
 
+                if line == "GROUP CREATE\n" {
+                    matched = true;
+                    cmd = Some(Command::GroupCreate);
+                }
+
                 if line == "GROUP LEAVE\n" {
                     matched = true;
                     cmd = Some(Command::GroupLeave);

@@ -355,3 +355,85 @@ fn heavy_random_campaign() {
         random_campaign(seed * 0x9E37_79B9 + 7, 20_000);
     }
 }
+
+// MARK: - Group campaign
+
+/// Plays `steps` random group commands by six players from `seed`, and
+/// checks after each one:
+///
+/// 1. errors are only 401, 402, 403 or 404;
+/// 2. a player is in one group at most, and appears once in it;
+/// 3. a group is never empty, and its leader is one of its members;
+/// 4. a member is never also invited to the group it is in.
+///
+/// Returns how many times each command succeeded.
+fn group_campaign(seed: u64, steps: usize) -> HashMap<&'static str, usize> {
+    use crate::group;
+
+    let names = ["alice", "bob", "carol", "dave", "erin", "frank"];
+    let targets = ["alice", "bob", "carol", "dave", "erin", "frank", "ghost",
+        "", " bob "];
+    let mut gs = game_with_player("alice", "entrance");
+    for name in &names[1..] {
+        add_player(&mut gs, name, "entrance");
+    }
+    let mut rng = Rng(seed);
+    let mut successes: HashMap<&'static str, usize> = HashMap::new();
+
+    for step in 0..steps {
+        let who = rng.pick(&names);
+        let (verb, reply) = match rng.next() % 4 {
+            0 => ("create", group::create(&mut gs, who)),
+            1 => ("invite", group::invite(&mut gs, who, rng.pick(&targets))),
+            2 => ("join", group::join(&mut gs, who, rng.pick(&targets))),
+            _ => ("leave", group::leave(&mut gs, who)),
+        };
+        match reply {
+            Response::Ok(_) => *successes.entry(verb).or_default() += 1,
+            Response::Err { code, .. } => assert!(
+                [401, 402, 403, 404].contains(&code),
+                "step {step}: {verb} gave {code}"
+            ),
+        }
+
+        let mut seen: Vec<&String> = Vec::new();
+        for (id, grp) in &gs.groups {
+            assert!(!grp.members.is_empty(), "step {step}: {id} is empty");
+            assert!(grp.members.contains(&grp.leader),
+                "step {step}: leader of {id} is not a member");
+            for member in &grp.members {
+                assert!(!seen.contains(&member),
+                    "step {step}: {member} is in two groups or twice");
+                seen.push(member);
+                assert!(!grp.invited.contains(member),
+                    "step {step}: {member} is both member and invited");
+            }
+        }
+    }
+    successes
+}
+
+/// 20 campaigns of 20 000 group commands, each command reached.
+#[test]
+fn group_campaign_keeps_invariants() {
+    let mut total: HashMap<&str, usize> = HashMap::new();
+    for seed in 1..=20 {
+        for (verb, count) in group_campaign(seed * 0x2545_F491, 20_000) {
+            *total.entry(verb).or_default() += count;
+        }
+    }
+    println!("{total:?}");
+    for verb in ["create", "invite", "join", "leave"] {
+        assert!(total.get(verb).copied().unwrap_or(0) > 0,
+            "{verb} never succeeded: {total:?}");
+    }
+}
+
+/// 500 group campaigns of 20 000 commands: 10 million commands.
+#[test]
+#[ignore]
+fn heavy_group_campaign() {
+    for seed in 1..=500 {
+        group_campaign(seed * 0x9E37_79B9 + 3, 20_000);
+    }
+}
