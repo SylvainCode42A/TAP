@@ -7,10 +7,13 @@ use crate::send_error_mess;
 
 pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
     let mut current_username: Option<String> = None;
+    let mut reader = match stream.try_clone() {
+        Ok(read_half) => BufReader::new(read_half),
+        Err(_) => return,
+    };
     stream.write_all("OK hello proto=1\n".as_bytes()).expect("Failed to send hello");
 
     loop {
-        let mut reader = BufReader::new(&mut *stream);
         let mut line = String::new();
 
         match reader.read_line(&mut line) {
