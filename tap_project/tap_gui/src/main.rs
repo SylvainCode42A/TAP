@@ -1,11 +1,13 @@
+use std::collections::BTreeMap;
 use std::env;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::ExitCode;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
 use eframe::egui;
+use serde::Deserialize;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 7878;
@@ -60,26 +62,104 @@ fn spawn_reader(stream: TcpStream, ctx: egui::Context) -> Receiver<String> {
     receiver
 }
 
+/// Room part of a LOOK reply (RFC 5.1.2).
+#[derive(Deserialize)]
+struct RoomInfo {
+    id: String,
+    name: String,
+    description: String,
+    /// Direction -> room id. A BTreeMap keeps the directions sorted.
+    exits: BTreeMap<String, String>,
+}
+
+/// Whole JSON of a LOOK reply (RFC 5.1.2).
+#[derive(Deserialize)]
+struct Look {
+    room: RoomInfo,
+    players: Vec<String>,
+    items: Vec<String>,
+    npcs: Vec<String>,
+}
+
+/// Reads a line like `OK {"room":...}`. Returns None if it is not a LOOK reply.
+fn parse_look(line: &str) -> Option<Look> {
+    let json = line.strip_prefix("OK ")?;
+    serde_json::from_str(json).ok()
+}
+
+/// Reads a line like `OK ["item.a","item.b"]`. Returns None if it is not an INVENTORY reply.
+fn parse_inventory(line: &str) -> Option<Vec<String>> {
+    let json = line.strip_prefix("OK ")?;
+    serde_json::from_str(json).ok()
+}
+
+/// Joins a list with commas, or gives `-` when it is empty.
+fn join_or_dash(list: &[String]) -> String {
+    if list.is_empty() {
+        "-".to_string()
+    } else {
+        list.join(", ")
+    }
+}
+
 /// State of the GUI window.
 struct TapApp {
     /// Lines coming from the network thread, None if the connection failed.
     receiver: Option<Receiver<String>>,
+    /// Write side of the connection, None if the connection failed.
+    writer: Option<TcpStream>,
     /// Every line shown in the log, oldest first.
     log: Vec<String>,
+    /// Player name typed in the name field.
+    name: String,
+    /// Last room received with LOOK, None before the first one.
+    room: Option<Look>,
+    /// Items held by the player, None before the first INVENTORY reply.
+    inventory: Option<Vec<String>>,
+    /// Player name or group id typed for GROUP INVITE / GROUP JOIN.
+    group_target: String,
 }
 
 impl TapApp {
     /// Connects to the server and starts the network thread.
     fn new(ctx: &egui::Context, host: &str, port: u16) -> TapApp {
-        match TcpStream::connect((host, port)) {
-            Ok(stream) => TapApp {
-                receiver: Some(spawn_reader(stream, ctx.clone())),
-                log: vec![format!("Connected to {host}:{port}")],
-            },
-            Err(e) => TapApp {
-                receiver: None,
-                log: vec![format!("Connection to {host}:{port} failed: {e}")],
-            },
+        let mut app = TapApp {
+            receiver: None,
+            writer: None,
+            log: vec![],
+            name: String::new(),
+            room: None,
+            inventory: None,
+            group_target: String::new(),
+        };
+        let stream = match TcpStream::connect((host, port)) {
+            Ok(s) => s,
+            Err(e) => {
+                app.log
+                    .push(format!("Connection to {host}:{port} failed: {e}"));
+                return app;
+            }
+        };
+        match stream.try_clone() {
+            Ok(reader_stream) => {
+                app.receiver = Some(spawn_reader(reader_stream, ctx.clone()));
+                app.writer = Some(stream);
+                app.log.push(format!("Connected to {host}:{port}"));
+            }
+            Err(e) => app.log.push(format!("Cannot clone connection: {e}")),
+        }
+        app
+    }
+
+    /// Sends one command to the server, ending with `\n`, and shows it in the log.
+    fn send(&mut self, command: &str) {
+        let Some(writer) = &mut self.writer else {
+            self.log.push("Not connected".to_string());
+            return;
+        };
+        match writer.write_all(format!("{command}\n").as_bytes()) {
+            Ok(()) => self.log.push(format!("> {command}")),
+            Err(e) => self.log.push(format!("Send error: {e}")),
         }
     }
 }
@@ -90,12 +170,57 @@ impl eframe::App for TapApp {
         // Move every line received since the last frame into the log.
         if let Some(receiver) = &self.receiver {
             while let Ok(line) = receiver.try_recv() {
+                if let Some(look) = parse_look(&line) {
+                    self.room = Some(look);
+                } else if let Some(items) = parse_inventory(&line) {
+                    self.inventory = Some(items);
+                }
                 self.log.push(line);
             }
         }
 
+        // Buttons only add commands to this list: they are sent after drawing,
+        // because the drawing code already borrows parts of `self`.
+        let mut commands: Vec<String> = Vec::new();
+
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TAP");
+            ui.horizontal(|ui| {
+                ui.label("Name:");
+                ui.text_edit_singleline(&mut self.name);
+                if ui.button("Connect").clicked() {
+                    commands.push(format!("CONNECT {}", self.name.trim()));
+                    push_refresh(&mut commands);
+                }
+            });
+            ui.separator();
+            if let Some(look) = &self.room {
+                show_room(ui, look, &mut commands);
+                ui.separator();
+            }
+            ui.horizontal(|ui| {
+                ui.label("Inventory:");
+                if let Some(items) = &self.inventory {
+                    if items.is_empty() {
+                        ui.label("-");
+                    }
+                    for item in items {
+                        if ui.button(format!("Drop {item}")).clicked() {
+                            commands.push(format!("DROP {item}"));
+                            push_refresh(&mut commands);
+                        }
+                    }
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                for command in ["LOOK", "INVENTORY", "STATUS", "QUESTS", "WHO", "QUIT"] {
+                    if ui.button(command).clicked() {
+                        commands.push(command.to_string());
+                    }
+                }
+            });
+            show_group(ui, &mut self.group_target, &mut commands);
+            ui.separator();
             egui::ScrollArea::vertical()
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
@@ -104,7 +229,86 @@ impl eframe::App for TapApp {
                     }
                 });
         });
+
+        for command in commands {
+            self.send(&command);
+        }
     }
+}
+
+/// Adds LOOK and INVENTORY, so the room and the inventory are shown again.
+fn push_refresh(commands: &mut Vec<String>) {
+    commands.push("LOOK".to_string());
+    commands.push("INVENTORY".to_string());
+}
+
+/// Draws the room panel from the last LOOK reply, with one button per action.
+fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
+    ui.horizontal(|ui| {
+        ui.heading(&look.room.name);
+        ui.weak(&look.room.id);
+    });
+    ui.label(&look.room.description);
+
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Exits:");
+        if look.room.exits.is_empty() {
+            ui.label("-");
+        }
+        for (direction, room) in &look.room.exits {
+            if ui.button(format!("{direction} -> {room}")).clicked() {
+                commands.push(format!("MOVE {direction}"));
+                commands.push("LOOK".to_string());
+            }
+        }
+    });
+    ui.label(format!("Players: {}", join_or_dash(&look.players)));
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Items:");
+        if look.items.is_empty() {
+            ui.label("-");
+        }
+        for item in &look.items {
+            if ui.button(format!("Take {item}")).clicked() {
+                commands.push(format!("TAKE {item}"));
+                push_refresh(commands);
+            }
+        }
+    });
+    if look.npcs.is_empty() {
+        ui.label("NPCs: -");
+    }
+    for npc in &look.npcs {
+        ui.horizontal(|ui| {
+            ui.label(format!("NPC {npc}:"));
+            for action in ["TALK", "ATTACK", "QUEST"] {
+                if ui.button(action).clicked() {
+                    commands.push(format!("{action} {npc}"));
+                }
+            }
+        });
+    }
+}
+
+/// Draws the GROUP buttons. INVITE takes a player name, JOIN a group id.
+fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>) {
+    ui.horizontal(|ui| {
+        ui.label("Group:");
+        if ui.button("CREATE").clicked() {
+            commands.push("GROUP CREATE".to_string());
+        }
+        if ui.button("LEAVE").clicked() {
+            commands.push("GROUP LEAVE".to_string());
+        }
+        ui.add(egui::TextEdit::singleline(target).hint_text("player or group id"));
+        let target = target.trim();
+        if ui.button("INVITE").clicked() {
+            commands.push(format!("GROUP INVITE {target}"));
+        }
+        if ui.button("JOIN").clicked() {
+            commands.push(format!("GROUP JOIN {target}"));
+        }
+    });
 }
 
 fn main() -> ExitCode {
@@ -130,5 +334,43 @@ fn main() -> ExitCode {
             eprintln!("GUI error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_look_reads_rfc_json() {
+        let line = r#"OK {"room":{"id":"entrance","name":"Dungeon Entrance","description":"A cold stone archway.","exits":{"north":"corridor","east":"guard_room"}},"players":["Alice"],"items":[],"npcs":["merchant"]}"#;
+        let look = parse_look(line).expect("valid LOOK reply");
+        assert_eq!(look.room.name, "Dungeon Entrance");
+        assert_eq!(
+            look.room.exits.get("north").map(String::as_str),
+            Some("corridor")
+        );
+        assert_eq!(look.players, vec!["Alice"]);
+        assert!(look.items.is_empty());
+    }
+
+    #[test]
+    fn parse_look_ignores_other_lines() {
+        assert!(parse_look("OK hello proto=1").is_none());
+        assert!(parse_look("ERR 301 NO_EXIT").is_none());
+    }
+
+    #[test]
+    fn parse_inventory_reads_rfc_list() {
+        let items = parse_inventory(r#"OK ["item.herbs", "item.loaf_bread"]"#);
+        assert_eq!(
+            items,
+            Some(vec![
+                "item.herbs".to_string(),
+                "item.loaf_bread".to_string()
+            ])
+        );
+        assert_eq!(parse_inventory("OK []"), Some(vec![]));
+        assert!(parse_inventory("OK taken=item.herbs").is_none());
     }
 }
