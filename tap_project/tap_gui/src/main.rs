@@ -1,5 +1,5 @@
 use std::env;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::ExitCode;
 use std::sync::mpsc::{self, Receiver};
@@ -64,22 +64,51 @@ fn spawn_reader(stream: TcpStream, ctx: egui::Context) -> Receiver<String> {
 struct TapApp {
     /// Lines coming from the network thread, None if the connection failed.
     receiver: Option<Receiver<String>>,
+    /// Write side of the connection, None if the connection failed.
+    writer: Option<TcpStream>,
     /// Every line shown in the log, oldest first.
     log: Vec<String>,
+    /// Player name typed in the name field.
+    name: String,
 }
 
 impl TapApp {
     /// Connects to the server and starts the network thread.
     fn new(ctx: &egui::Context, host: &str, port: u16) -> TapApp {
-        match TcpStream::connect((host, port)) {
-            Ok(stream) => TapApp {
-                receiver: Some(spawn_reader(stream, ctx.clone())),
-                log: vec![format!("Connected to {host}:{port}")],
-            },
-            Err(e) => TapApp {
-                receiver: None,
-                log: vec![format!("Connection to {host}:{port} failed: {e}")],
-            },
+        let mut app = TapApp {
+            receiver: None,
+            writer: None,
+            log: vec![],
+            name: String::new(),
+        };
+        let stream = match TcpStream::connect((host, port)) {
+            Ok(s) => s,
+            Err(e) => {
+                app.log
+                    .push(format!("Connection to {host}:{port} failed: {e}"));
+                return app;
+            }
+        };
+        match stream.try_clone() {
+            Ok(reader_stream) => {
+                app.receiver = Some(spawn_reader(reader_stream, ctx.clone()));
+                app.writer = Some(stream);
+                app.log.push(format!("Connected to {host}:{port}"));
+            }
+            Err(e) => app.log.push(format!("Cannot clone connection: {e}")),
+        }
+        app
+    }
+
+    /// Sends one command to the server, ending with `\n`, and shows it in the log.
+    fn send(&mut self, command: &str) {
+        let Some(writer) = &mut self.writer else {
+            self.log.push("Not connected".to_string());
+            return;
+        };
+        match writer.write_all(format!("{command}\n").as_bytes()) {
+            Ok(()) => self.log.push(format!("> {command}")),
+            Err(e) => self.log.push(format!("Send error: {e}")),
         }
     }
 }
@@ -94,8 +123,18 @@ impl eframe::App for TapApp {
             }
         }
 
+        // Buttons only record the click here: commands are sent after drawing,
+        // because the drawing code already borrows `self.name` and `self.log`.
+        let mut connect_clicked = false;
+
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TAP");
+            ui.horizontal(|ui| {
+                ui.label("Name:");
+                ui.text_edit_singleline(&mut self.name);
+                connect_clicked = ui.button("Connect").clicked();
+            });
+            ui.separator();
             egui::ScrollArea::vertical()
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
@@ -104,6 +143,12 @@ impl eframe::App for TapApp {
                     }
                 });
         });
+
+        if connect_clicked {
+            let name = self.name.trim().to_string();
+            self.send(&format!("CONNECT {name}"));
+            self.send("LOOK");
+        }
     }
 }
 
