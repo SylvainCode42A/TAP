@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -6,6 +7,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
 use eframe::egui;
+use serde::Deserialize;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 7878;
@@ -60,6 +62,40 @@ fn spawn_reader(stream: TcpStream, ctx: egui::Context) -> Receiver<String> {
     receiver
 }
 
+/// Room part of a LOOK reply (RFC 5.1.2).
+#[derive(Deserialize)]
+struct RoomInfo {
+    id: String,
+    name: String,
+    description: String,
+    /// Direction -> room id. A BTreeMap keeps the directions sorted.
+    exits: BTreeMap<String, String>,
+}
+
+/// Whole JSON of a LOOK reply (RFC 5.1.2).
+#[derive(Deserialize)]
+struct Look {
+    room: RoomInfo,
+    players: Vec<String>,
+    items: Vec<String>,
+    npcs: Vec<String>,
+}
+
+/// Reads a line like `OK {"room":...}`. Returns None if it is not a LOOK reply.
+fn parse_look(line: &str) -> Option<Look> {
+    let json = line.strip_prefix("OK ")?;
+    serde_json::from_str(json).ok()
+}
+
+/// Joins a list with commas, or gives `-` when it is empty.
+fn join_or_dash(list: &[String]) -> String {
+    if list.is_empty() {
+        "-".to_string()
+    } else {
+        list.join(", ")
+    }
+}
+
 /// State of the GUI window.
 struct TapApp {
     /// Lines coming from the network thread, None if the connection failed.
@@ -70,6 +106,8 @@ struct TapApp {
     log: Vec<String>,
     /// Player name typed in the name field.
     name: String,
+    /// Last room received with LOOK, None before the first one.
+    room: Option<Look>,
 }
 
 impl TapApp {
@@ -80,6 +118,7 @@ impl TapApp {
             writer: None,
             log: vec![],
             name: String::new(),
+            room: None,
         };
         let stream = match TcpStream::connect((host, port)) {
             Ok(s) => s,
@@ -119,6 +158,9 @@ impl eframe::App for TapApp {
         // Move every line received since the last frame into the log.
         if let Some(receiver) = &self.receiver {
             while let Ok(line) = receiver.try_recv() {
+                if let Some(look) = parse_look(&line) {
+                    self.room = Some(look);
+                }
                 self.log.push(line);
             }
         }
@@ -135,6 +177,10 @@ impl eframe::App for TapApp {
                 connect_clicked = ui.button("Connect").clicked();
             });
             ui.separator();
+            if let Some(look) = &self.room {
+                show_room(ui, look);
+                ui.separator();
+            }
             egui::ScrollArea::vertical()
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
@@ -150,6 +196,26 @@ impl eframe::App for TapApp {
             self.send("LOOK");
         }
     }
+}
+
+/// Draws the room panel from the last LOOK reply.
+fn show_room(ui: &mut egui::Ui, look: &Look) {
+    ui.horizontal(|ui| {
+        ui.heading(&look.room.name);
+        ui.weak(&look.room.id);
+    });
+    ui.label(&look.room.description);
+
+    let exits: Vec<String> = look
+        .room
+        .exits
+        .iter()
+        .map(|(direction, room)| format!("{direction} -> {room}"))
+        .collect();
+    ui.label(format!("Exits: {}", join_or_dash(&exits)));
+    ui.label(format!("Players: {}", join_or_dash(&look.players)));
+    ui.label(format!("Items: {}", join_or_dash(&look.items)));
+    ui.label(format!("NPCs: {}", join_or_dash(&look.npcs)));
 }
 
 fn main() -> ExitCode {
@@ -175,5 +241,29 @@ fn main() -> ExitCode {
             eprintln!("GUI error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_look_reads_rfc_json() {
+        let line = r#"OK {"room":{"id":"entrance","name":"Dungeon Entrance","description":"A cold stone archway.","exits":{"north":"corridor","east":"guard_room"}},"players":["Alice"],"items":[],"npcs":["merchant"]}"#;
+        let look = parse_look(line).expect("valid LOOK reply");
+        assert_eq!(look.room.name, "Dungeon Entrance");
+        assert_eq!(
+            look.room.exits.get("north").map(String::as_str),
+            Some("corridor")
+        );
+        assert_eq!(look.players, vec!["Alice"]);
+        assert!(look.items.is_empty());
+    }
+
+    #[test]
+    fn parse_look_ignores_other_lines() {
+        assert!(parse_look("OK hello proto=1").is_none());
+        assert!(parse_look("ERR 301 NO_EXIT").is_none());
     }
 }
