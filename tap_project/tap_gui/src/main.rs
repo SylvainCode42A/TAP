@@ -116,6 +116,8 @@ struct TapApp {
     room: Option<Look>,
     /// Items held by the player, None before the first INVENTORY reply.
     inventory: Option<Vec<String>>,
+    /// Player name or group id typed for GROUP INVITE / GROUP JOIN.
+    group_target: String,
 }
 
 impl TapApp {
@@ -128,6 +130,7 @@ impl TapApp {
             name: String::new(),
             room: None,
             inventory: None,
+            group_target: String::new(),
         };
         let stream = match TcpStream::connect((host, port)) {
             Ok(s) => s,
@@ -159,12 +162,6 @@ impl TapApp {
             Err(e) => self.log.push(format!("Send error: {e}")),
         }
     }
-
-    /// Asks the server for the room and the inventory again.
-    fn refresh(&mut self) {
-        self.send("LOOK");
-        self.send("INVENTORY");
-    }
 }
 
 impl eframe::App for TapApp {
@@ -182,40 +179,47 @@ impl eframe::App for TapApp {
             }
         }
 
-        // Buttons only record the click here: commands are sent after drawing,
-        // because the drawing code already borrows `self.name` and `self.log`.
-        let mut connect_clicked = false;
-        let mut look_clicked = false;
-        let mut inventory_clicked = false;
-        let mut take_item: Option<String> = None;
-        let mut drop_item: Option<String> = None;
+        // Buttons only add commands to this list: they are sent after drawing,
+        // because the drawing code already borrows parts of `self`.
+        let mut commands: Vec<String> = Vec::new();
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TAP");
             ui.horizontal(|ui| {
                 ui.label("Name:");
                 ui.text_edit_singleline(&mut self.name);
-                connect_clicked = ui.button("Connect").clicked();
+                if ui.button("Connect").clicked() {
+                    commands.push(format!("CONNECT {}", self.name.trim()));
+                    push_refresh(&mut commands);
+                }
             });
             ui.separator();
             if let Some(look) = &self.room {
-                take_item = show_room(ui, look);
+                show_room(ui, look, &mut commands);
                 ui.separator();
             }
             ui.horizontal(|ui| {
-                look_clicked = ui.button("Look").clicked();
-                inventory_clicked = ui.button("Inventory").clicked();
+                ui.label("Inventory:");
                 if let Some(items) = &self.inventory {
                     if items.is_empty() {
                         ui.label("-");
                     }
                     for item in items {
                         if ui.button(format!("Drop {item}")).clicked() {
-                            drop_item = Some(item.clone());
+                            commands.push(format!("DROP {item}"));
+                            push_refresh(&mut commands);
                         }
                     }
                 }
             });
+            ui.horizontal_wrapped(|ui| {
+                for command in ["LOOK", "INVENTORY", "STATUS", "QUESTS", "WHO", "QUIT"] {
+                    if ui.button(command).clicked() {
+                        commands.push(command.to_string());
+                    }
+                }
+            });
+            show_group(ui, &mut self.group_target, &mut commands);
             ui.separator();
             egui::ScrollArea::vertical()
                 .stick_to_bottom(true)
@@ -226,59 +230,85 @@ impl eframe::App for TapApp {
                 });
         });
 
-        if connect_clicked {
-            let name = self.name.trim().to_string();
-            self.send(&format!("CONNECT {name}"));
-            self.refresh();
-        }
-        if look_clicked {
-            self.send("LOOK");
-        }
-        if inventory_clicked {
-            self.send("INVENTORY");
-        }
-        if let Some(item) = take_item {
-            self.send(&format!("TAKE {item}"));
-            self.refresh();
-        }
-        if let Some(item) = drop_item {
-            self.send(&format!("DROP {item}"));
-            self.refresh();
+        for command in commands {
+            self.send(&command);
         }
     }
 }
 
-/// Draws the room panel from the last LOOK reply.
-/// Returns the item whose Take button was clicked, if any.
-fn show_room(ui: &mut egui::Ui, look: &Look) -> Option<String> {
+/// Adds LOOK and INVENTORY, so the room and the inventory are shown again.
+fn push_refresh(commands: &mut Vec<String>) {
+    commands.push("LOOK".to_string());
+    commands.push("INVENTORY".to_string());
+}
+
+/// Draws the room panel from the last LOOK reply, with one button per action.
+fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
     ui.horizontal(|ui| {
         ui.heading(&look.room.name);
         ui.weak(&look.room.id);
     });
     ui.label(&look.room.description);
 
-    let exits: Vec<String> = look
-        .room
-        .exits
-        .iter()
-        .map(|(direction, room)| format!("{direction} -> {room}"))
-        .collect();
-    ui.label(format!("Exits: {}", join_or_dash(&exits)));
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Exits:");
+        if look.room.exits.is_empty() {
+            ui.label("-");
+        }
+        for (direction, room) in &look.room.exits {
+            if ui.button(format!("{direction} -> {room}")).clicked() {
+                commands.push(format!("MOVE {direction}"));
+                commands.push("LOOK".to_string());
+            }
+        }
+    });
     ui.label(format!("Players: {}", join_or_dash(&look.players)));
-    let mut take_item = None;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Items:");
         if look.items.is_empty() {
             ui.label("-");
         }
         for item in &look.items {
             if ui.button(format!("Take {item}")).clicked() {
-                take_item = Some(item.clone());
+                commands.push(format!("TAKE {item}"));
+                push_refresh(commands);
             }
         }
     });
-    ui.label(format!("NPCs: {}", join_or_dash(&look.npcs)));
-    take_item
+    if look.npcs.is_empty() {
+        ui.label("NPCs: -");
+    }
+    for npc in &look.npcs {
+        ui.horizontal(|ui| {
+            ui.label(format!("NPC {npc}:"));
+            for action in ["TALK", "ATTACK", "QUEST"] {
+                if ui.button(action).clicked() {
+                    commands.push(format!("{action} {npc}"));
+                }
+            }
+        });
+    }
+}
+
+/// Draws the GROUP buttons. INVITE takes a player name, JOIN a group id.
+fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>) {
+    ui.horizontal(|ui| {
+        ui.label("Group:");
+        if ui.button("CREATE").clicked() {
+            commands.push("GROUP CREATE".to_string());
+        }
+        if ui.button("LEAVE").clicked() {
+            commands.push("GROUP LEAVE".to_string());
+        }
+        ui.add(egui::TextEdit::singleline(target).hint_text("player or group id"));
+        let target = target.trim();
+        if ui.button("INVITE").clicked() {
+            commands.push(format!("GROUP INVITE {target}"));
+        }
+        if ui.button("JOIN").clicked() {
+            commands.push(format!("GROUP JOIN {target}"));
+        }
+    });
 }
 
 fn main() -> ExitCode {
