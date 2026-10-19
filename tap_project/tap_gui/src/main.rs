@@ -87,6 +87,12 @@ fn parse_look(line: &str) -> Option<Look> {
     serde_json::from_str(json).ok()
 }
 
+/// Reads a line like `OK ["item.a","item.b"]`. Returns None if it is not an INVENTORY reply.
+fn parse_inventory(line: &str) -> Option<Vec<String>> {
+    let json = line.strip_prefix("OK ")?;
+    serde_json::from_str(json).ok()
+}
+
 /// Joins a list with commas, or gives `-` when it is empty.
 fn join_or_dash(list: &[String]) -> String {
     if list.is_empty() {
@@ -108,6 +114,8 @@ struct TapApp {
     name: String,
     /// Last room received with LOOK, None before the first one.
     room: Option<Look>,
+    /// Items held by the player, None before the first INVENTORY reply.
+    inventory: Option<Vec<String>>,
 }
 
 impl TapApp {
@@ -119,6 +127,7 @@ impl TapApp {
             log: vec![],
             name: String::new(),
             room: None,
+            inventory: None,
         };
         let stream = match TcpStream::connect((host, port)) {
             Ok(s) => s,
@@ -160,6 +169,8 @@ impl eframe::App for TapApp {
             while let Ok(line) = receiver.try_recv() {
                 if let Some(look) = parse_look(&line) {
                     self.room = Some(look);
+                } else if let Some(items) = parse_inventory(&line) {
+                    self.inventory = Some(items);
                 }
                 self.log.push(line);
             }
@@ -168,6 +179,7 @@ impl eframe::App for TapApp {
         // Buttons only record the click here: commands are sent after drawing,
         // because the drawing code already borrows `self.name` and `self.log`.
         let mut connect_clicked = false;
+        let mut inventory_clicked = false;
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TAP");
@@ -181,6 +193,13 @@ impl eframe::App for TapApp {
                 show_room(ui, look);
                 ui.separator();
             }
+            ui.horizontal(|ui| {
+                inventory_clicked = ui.button("Inventory").clicked();
+                if let Some(items) = &self.inventory {
+                    ui.label(join_or_dash(items));
+                }
+            });
+            ui.separator();
             egui::ScrollArea::vertical()
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
@@ -194,6 +213,10 @@ impl eframe::App for TapApp {
             let name = self.name.trim().to_string();
             self.send(&format!("CONNECT {name}"));
             self.send("LOOK");
+            self.send("INVENTORY");
+        }
+        if inventory_clicked {
+            self.send("INVENTORY");
         }
     }
 }
@@ -265,5 +288,19 @@ mod tests {
     fn parse_look_ignores_other_lines() {
         assert!(parse_look("OK hello proto=1").is_none());
         assert!(parse_look("ERR 301 NO_EXIT").is_none());
+    }
+
+    #[test]
+    fn parse_inventory_reads_rfc_list() {
+        let items = parse_inventory(r#"OK ["item.herbs", "item.loaf_bread"]"#);
+        assert_eq!(
+            items,
+            Some(vec![
+                "item.herbs".to_string(),
+                "item.loaf_bread".to_string()
+            ])
+        );
+        assert_eq!(parse_inventory("OK []"), Some(vec![]));
+        assert!(parse_inventory("OK taken=item.herbs").is_none());
     }
 }
