@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
 use crate::{Command, Response, GameState, Player};
 use crate::{combat, group, quest};
+use crate::RoomInfo;
+use crate::LookResponse;
 
 pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: &Option<String>) -> Response {
     match cmd {
@@ -20,7 +22,33 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                     let gs = game_state.lock().unwrap();
                     match gs.players.get(username) {
                         Some(player) => match gs.world.world.locations.get(&player.current_room) {
-                            Some(room) => Response::Ok(format!("{}_room = {:?}", player.username, room)),
+                            Some(room) => {
+                                let room_id = player.current_room.clone();
+
+                                let players_for_init = gs.players.values()
+                                    .filter(|p| p.current_room == room_id)
+                                    .map(|p| p.username.clone())
+                                    .collect();
+
+                                let npcs_for_init = room.spawns.iter()
+                                    .map(|spawn| spawn.npc_type.clone())
+                                    .collect();
+
+                                let look_resp = LookResponse {
+                                    room: RoomInfo {
+                                        id: room_id,
+                                        name: room.name.clone(),
+                                        description: room.description.clone(),
+                                        exits: room.exits.clone(),
+                                    },
+                                    players: players_for_init,
+                                    items: room.items.clone(),
+                                    npcs: npcs_for_init,
+                                };
+
+                                let look_from_js = serde_json::to_string(&look_resp).unwrap();
+                                Response::Ok(format!("{}", look_from_js))
+                            }
                             None => Response::Err { code: 404, message: "Current room not found".to_string() }
                         }
                         None => Response::Err { code: 404, message: "Current player not found".to_string() }
