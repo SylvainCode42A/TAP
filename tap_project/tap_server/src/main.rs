@@ -1,7 +1,7 @@
 use std::net::{TcpListener, TcpStream};
 use std::io::Write;
 use std::thread;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -11,6 +11,22 @@ mod group;
 mod parsing;
 mod quest;
 mod world_check;
+
+#[derive(Serialize)]
+pub struct RoomInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub exits: HashMap<String, String>,
+}
+
+#[derive(Serialize)]
+pub struct LookResponse {
+    pub room: RoomInfo,
+    pub players: Vec<String>,
+    pub items: Vec<String>,
+    pub npcs: Vec<String>,
+}
 
 #[derive(Deserialize)]
 pub struct World {
@@ -25,7 +41,7 @@ pub struct WorldData {
     pub quests: HashMap<String, Quest>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 pub struct Location {
     pub name: String,
     pub description: String,
@@ -36,14 +52,14 @@ pub struct Location {
     pub spawns: Vec<Spawn>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Item {
     pub name: String,
     pub description: String,
     pub obtainable: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Npc {
     pub name: String,
     pub description: String,
@@ -54,7 +70,7 @@ pub struct Npc {
     pub hostile: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Quest {
     pub name: String,
     pub description: String,
@@ -71,7 +87,7 @@ pub struct Quest {
     pub requires_kill: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 pub struct Spawn {
     pub npc_type: String,
     pub count: u32,
