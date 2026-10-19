@@ -159,6 +159,12 @@ impl TapApp {
             Err(e) => self.log.push(format!("Send error: {e}")),
         }
     }
+
+    /// Asks the server for the room and the inventory again.
+    fn refresh(&mut self) {
+        self.send("LOOK");
+        self.send("INVENTORY");
+    }
 }
 
 impl eframe::App for TapApp {
@@ -179,7 +185,10 @@ impl eframe::App for TapApp {
         // Buttons only record the click here: commands are sent after drawing,
         // because the drawing code already borrows `self.name` and `self.log`.
         let mut connect_clicked = false;
+        let mut look_clicked = false;
         let mut inventory_clicked = false;
+        let mut take_item: Option<String> = None;
+        let mut drop_item: Option<String> = None;
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("TAP");
@@ -190,13 +199,21 @@ impl eframe::App for TapApp {
             });
             ui.separator();
             if let Some(look) = &self.room {
-                show_room(ui, look);
+                take_item = show_room(ui, look);
                 ui.separator();
             }
             ui.horizontal(|ui| {
+                look_clicked = ui.button("Look").clicked();
                 inventory_clicked = ui.button("Inventory").clicked();
                 if let Some(items) = &self.inventory {
-                    ui.label(join_or_dash(items));
+                    if items.is_empty() {
+                        ui.label("-");
+                    }
+                    for item in items {
+                        if ui.button(format!("Drop {item}")).clicked() {
+                            drop_item = Some(item.clone());
+                        }
+                    }
                 }
             });
             ui.separator();
@@ -212,17 +229,28 @@ impl eframe::App for TapApp {
         if connect_clicked {
             let name = self.name.trim().to_string();
             self.send(&format!("CONNECT {name}"));
+            self.refresh();
+        }
+        if look_clicked {
             self.send("LOOK");
-            self.send("INVENTORY");
         }
         if inventory_clicked {
             self.send("INVENTORY");
+        }
+        if let Some(item) = take_item {
+            self.send(&format!("TAKE {item}"));
+            self.refresh();
+        }
+        if let Some(item) = drop_item {
+            self.send(&format!("DROP {item}"));
+            self.refresh();
         }
     }
 }
 
 /// Draws the room panel from the last LOOK reply.
-fn show_room(ui: &mut egui::Ui, look: &Look) {
+/// Returns the item whose Take button was clicked, if any.
+fn show_room(ui: &mut egui::Ui, look: &Look) -> Option<String> {
     ui.horizontal(|ui| {
         ui.heading(&look.room.name);
         ui.weak(&look.room.id);
@@ -237,8 +265,20 @@ fn show_room(ui: &mut egui::Ui, look: &Look) {
         .collect();
     ui.label(format!("Exits: {}", join_or_dash(&exits)));
     ui.label(format!("Players: {}", join_or_dash(&look.players)));
-    ui.label(format!("Items: {}", join_or_dash(&look.items)));
+    let mut take_item = None;
+    ui.horizontal(|ui| {
+        ui.label("Items:");
+        if look.items.is_empty() {
+            ui.label("-");
+        }
+        for item in &look.items {
+            if ui.button(format!("Take {item}")).clicked() {
+                take_item = Some(item.clone());
+            }
+        }
+    });
     ui.label(format!("NPCs: {}", join_or_dash(&look.npcs)));
+    take_item
 }
 
 fn main() -> ExitCode {
