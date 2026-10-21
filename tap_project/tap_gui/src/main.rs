@@ -93,6 +93,11 @@ fn parse_inventory(line: &str) -> Option<Vec<String>> {
     serde_json::from_str(json).ok()
 }
 
+/// Reads a WHO reply like `OK players=3`. Returns None for any other line.
+fn parse_who(line: &str) -> Option<usize> {
+    line.strip_prefix("OK players=")?.trim().parse().ok()
+}
+
 /// Joins a list with commas, or gives `-` when it is empty.
 fn join_or_dash(list: &[String]) -> String {
     if list.is_empty() {
@@ -116,6 +121,8 @@ struct TapApp {
     room: Option<Look>,
     /// Items held by the player, None before the first INVENTORY reply.
     inventory: Option<Vec<String>>,
+    /// Players on the whole server, from the last WHO reply.
+    server_players: Option<usize>,
     /// Player name or group id typed for GROUP INVITE / GROUP JOIN.
     group_target: String,
 }
@@ -130,6 +137,7 @@ impl TapApp {
             name: String::new(),
             room: None,
             inventory: None,
+            server_players: None,
             group_target: String::new(),
         };
         let stream = match TcpStream::connect((host, port)) {
@@ -174,6 +182,8 @@ impl eframe::App for TapApp {
                     self.room = Some(look);
                 } else if let Some(items) = parse_inventory(&line) {
                     self.inventory = Some(items);
+                } else if let Some(count) = parse_who(&line) {
+                    self.server_players = Some(count);
                 }
                 self.log.push(line);
             }
@@ -194,6 +204,7 @@ impl eframe::App for TapApp {
                 }
             });
             ui.separator();
+            show_counters(ui, self.room.as_ref(), self.server_players);
             if let Some(look) = &self.room {
                 show_room(ui, look, &mut commands);
                 ui.separator();
@@ -236,10 +247,22 @@ impl eframe::App for TapApp {
     }
 }
 
-/// Adds LOOK and INVENTORY, so the room and the inventory are shown again.
+/// Adds LOOK, INVENTORY and WHO, so the room, the inventory and the counters
+/// are shown again.
 fn push_refresh(commands: &mut Vec<String>) {
     commands.push("LOOK".to_string());
     commands.push("INVENTORY".to_string());
+    commands.push("WHO".to_string());
+}
+
+/// Draws the player counters: in this room (from LOOK) and on the server (from WHO).
+/// Shows `?` while the reply has not arrived yet.
+fn show_counters(ui: &mut egui::Ui, look: Option<&Look>, server_players: Option<usize>) {
+    let in_room = look.map_or("?".to_string(), |l| l.players.len().to_string());
+    let on_server = server_players.map_or("?".to_string(), |n| n.to_string());
+    ui.label(format!(
+        "Players in this room: {in_room}   |   Players on the server: {on_server}"
+    ));
 }
 
 /// Draws the room panel from the last LOOK reply, with one button per action.
@@ -258,7 +281,7 @@ fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
         for (direction, room) in &look.room.exits {
             if ui.button(format!("{direction} -> {room}")).clicked() {
                 commands.push(format!("MOVE {direction}"));
-                commands.push("LOOK".to_string());
+                push_refresh(commands);
             }
         }
     });
@@ -372,5 +395,13 @@ mod tests {
         );
         assert_eq!(parse_inventory("OK []"), Some(vec![]));
         assert!(parse_inventory("OK taken=item.herbs").is_none());
+    }
+
+    #[test]
+    fn parse_who_reads_player_count() {
+        assert_eq!(parse_who("OK players=3"), Some(3));
+        assert_eq!(parse_who("OK players=0"), Some(0));
+        assert!(parse_who("OK players=abc").is_none());
+        assert!(parse_who("OK taken=torch").is_none());
     }
 }
