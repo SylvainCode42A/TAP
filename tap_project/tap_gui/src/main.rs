@@ -63,12 +63,16 @@ fn spawn_reader(stream: TcpStream, ctx: egui::Context) -> Receiver<String> {
 }
 
 /// Room part of a LOOK reply (RFC 5.1.2).
+/// `#[serde(default)]` lets a server from another group leave a field out:
+/// it becomes empty instead of making the whole reply unreadable.
 #[derive(Deserialize)]
 struct RoomInfo {
     id: String,
     name: String,
+    #[serde(default)]
     description: String,
     /// Direction -> room id. A BTreeMap keeps the directions sorted.
+    #[serde(default)]
     exits: BTreeMap<String, String>,
 }
 
@@ -76,8 +80,11 @@ struct RoomInfo {
 #[derive(Deserialize)]
 struct Look {
     room: RoomInfo,
+    #[serde(default)]
     players: Vec<String>,
+    #[serde(default)]
     items: Vec<String>,
+    #[serde(default)]
     npcs: Vec<String>,
 }
 
@@ -96,6 +103,24 @@ fn parse_inventory(line: &str) -> Option<Vec<String>> {
 /// Reads a WHO reply like `OK players=3`. Returns None for any other line.
 fn parse_who(line: &str) -> Option<usize> {
     line.strip_prefix("OK players=")?.trim().parse().ok()
+}
+
+/// Turns an id into a name for people: `item.loaf_bread` -> `Loaf Bread`.
+/// Commands still send the id, which every server accepts (RFC 8.3).
+fn display_name(id: &str) -> String {
+    let last_part = id.rsplit('.').next().unwrap_or(id);
+    last_part
+        .split('_')
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
 }
 
 /// Joins a list with commas, or gives `-` when it is empty.
@@ -216,7 +241,8 @@ impl eframe::App for TapApp {
                         ui.label("-");
                     }
                     for item in items {
-                        if ui.button(format!("Drop {item}")).clicked() {
+                        let button = ui.button(format!("Drop {}", display_name(item)));
+                        if button.on_hover_text(item).clicked() {
                             commands.push(format!("DROP {item}"));
                             push_refresh(&mut commands);
                         }
@@ -292,7 +318,8 @@ fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
             ui.label("-");
         }
         for item in &look.items {
-            if ui.button(format!("Take {item}")).clicked() {
+            let button = ui.button(format!("Take {}", display_name(item)));
+            if button.on_hover_text(item).clicked() {
                 commands.push(format!("TAKE {item}"));
                 push_refresh(commands);
             }
@@ -303,7 +330,8 @@ fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
     }
     for npc in &look.npcs {
         ui.horizontal(|ui| {
-            ui.label(format!("NPC {npc}:"));
+            ui.label(format!("NPC {}:", display_name(npc)))
+                .on_hover_text(npc);
             for action in ["TALK", "ATTACK", "QUEST"] {
                 if ui.button(action).clicked() {
                     commands.push(format!("{action} {npc}"));
@@ -395,6 +423,25 @@ mod tests {
         );
         assert_eq!(parse_inventory("OK []"), Some(vec![]));
         assert!(parse_inventory("OK taken=item.herbs").is_none());
+    }
+
+    #[test]
+    fn parse_look_accepts_other_worlds() {
+        // Another group's server: unknown extra field, no npcs, no description.
+        let line = r#"OK {"room":{"id":"loc.bakery","name":"Old Bakery","exits":{}},"players":["bob"],"items":["item.loaf_bread"],"weather":"rain"}"#;
+        let look = parse_look(line).expect("reply from another world");
+        assert_eq!(look.room.name, "Old Bakery");
+        assert!(look.room.description.is_empty());
+        assert!(look.npcs.is_empty());
+        assert_eq!(look.items, vec!["item.loaf_bread"]);
+    }
+
+    #[test]
+    fn display_name_makes_ids_readable() {
+        assert_eq!(display_name("item.loaf_bread"), "Loaf Bread");
+        assert_eq!(display_name("torch"), "Torch");
+        assert_eq!(display_name("cell_key"), "Cell Key");
+        assert_eq!(display_name("npc.old_merchant"), "Old Merchant");
     }
 
     #[test]
