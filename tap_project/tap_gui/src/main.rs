@@ -3,14 +3,18 @@
 //! - `network`: connection thread, lines from the server to the window
 //! - `protocol`: reading the server replies (RFC 42TAP)
 //! - `app`: window state, commands sent and replies received
+//! - `replies`: what each server reply changes in the window
 //! - `images`: pictures of the rooms, built into the program
 //! - `view`: drawing helpers (room, player, counters, buttons)
 //! - `window`: the window layout, one panel per zone
+//! - `log_panel`: the log, coloured by kind of line
 
 mod app;
 mod images;
+mod log_panel;
 mod network;
 mod protocol;
+mod replies;
 mod view;
 mod window;
 

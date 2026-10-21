@@ -154,6 +154,7 @@ pub fn show_character(
                 ui.add(
                     egui::ProgressBar::new(fraction)
                         .text(text)
+                        .fill(health_color(fraction))
                         .desired_width(220.0),
                 );
             }
@@ -187,6 +188,23 @@ pub fn show_character(
         }
         ui.label(text);
     }
+}
+
+/// Colour of the health bar: green above 60 %, orange above 30 %, red below.
+fn health_color(fraction: f32) -> egui::Color32 {
+    if fraction > 0.6 {
+        egui::Color32::from_rgb(76, 175, 80)
+    } else if fraction > 0.3 {
+        egui::Color32::from_rgb(245, 166, 35)
+    } else {
+        egui::Color32::from_rgb(229, 57, 53)
+    }
+}
+
+/// Draws the group we are in, or `-`. Known from our own GROUP replies only:
+/// the server sends no event yet when the group changes (EVT GROUP).
+pub fn show_group_name(ui: &mut egui::Ui, group: Option<&str>) {
+    ui.label(format!("Group: {}", group.unwrap_or("-")));
 }
 
 /// Draws the GROUP buttons. INVITE takes a player name, JOIN the group leader's
@@ -229,5 +247,12 @@ mod tests {
         assert_eq!(display_name("torch"), "Torch");
         assert_eq!(display_name("cell_key"), "Cell Key");
         assert_eq!(display_name("npc.old_merchant"), "Old Merchant");
+    }
+
+    #[test]
+    fn health_bar_changes_colour() {
+        assert_eq!(health_color(1.0), egui::Color32::from_rgb(76, 175, 80));
+        assert_eq!(health_color(0.5), egui::Color32::from_rgb(245, 166, 35));
+        assert_eq!(health_color(0.1), egui::Color32::from_rgb(229, 57, 53));
     }
 }
