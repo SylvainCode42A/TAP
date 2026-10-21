@@ -7,6 +7,9 @@ use std::thread;
 
 use eframe::egui;
 
+/// Line sent to the window when the server closes the connection.
+pub const CONNECTION_CLOSED: &str = "Connection closed";
+
 /// Starts a thread that forwards every line received from the server to the window.
 /// `ctx` is used to wake the window up as soon as a line arrives.
 pub fn spawn_reader(stream: TcpStream, ctx: egui::Context) -> Receiver<String> {
@@ -27,7 +30,7 @@ pub fn spawn_reader(stream: TcpStream, ctx: egui::Context) -> Receiver<String> {
             }
             ctx.request_repaint();
         }
-        let _ = sender.send("Connection closed".to_string());
+        let _ = sender.send(CONNECTION_CLOSED.to_string());
         ctx.request_repaint();
     });
     receiver

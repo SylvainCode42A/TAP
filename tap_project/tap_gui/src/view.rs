@@ -91,6 +91,11 @@ fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
                         commands.push("STATUS".to_string());
                         push_refresh(commands);
                     }
+                    if action == "QUEST" {
+                        // A finished quest may heal, and its progress changed.
+                        commands.push("STATUS".to_string());
+                        commands.push("QUESTS".to_string());
+                    }
                 }
             }
         });
@@ -156,7 +161,8 @@ fn show_character(
     }
 }
 
-/// Draws the GROUP buttons. INVITE takes a player name, JOIN a group id.
+/// Draws the GROUP buttons. INVITE takes a player name, JOIN the group leader's
+/// name (RFC 5.3.3).
 fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>) {
     ui.horizontal(|ui| {
         ui.label("Group:");
@@ -166,7 +172,7 @@ fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>
         if ui.button("LEAVE").clicked() {
             commands.push("GROUP LEAVE".to_string());
         }
-        ui.add(egui::TextEdit::singleline(target).hint_text("player or group id"));
+        ui.add(egui::TextEdit::singleline(target).hint_text("player or leader name"));
         let target = target.trim();
         if ui.button("INVITE").clicked() {
             commands.push(format!("GROUP INVITE {target}"));
