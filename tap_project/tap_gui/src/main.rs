@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -150,12 +150,17 @@ struct TapApp {
     server_players: Option<usize>,
     /// Player name or group id typed for GROUP INVITE / GROUP JOIN.
     group_target: String,
+    /// Commands sent and still waiting for their reply, oldest first.
+    /// The server answers in order, so the next `OK` / `ERR` answers the front one.
+    pending: VecDeque<String>,
+    /// Last TALK answer: (NPC id, what the NPC said).
+    dialogue: Option<(String, String)>,
 }
 
 impl TapApp {
-    /// Connects to the server and starts the network thread.
-    fn new(ctx: &egui::Context, host: &str, port: u16) -> TapApp {
-        let mut app = TapApp {
+    /// A window with no connection and nothing received yet.
+    fn empty() -> TapApp {
+        TapApp {
             receiver: None,
             writer: None,
             log: vec![],
@@ -164,7 +169,14 @@ impl TapApp {
             inventory: None,
             server_players: None,
             group_target: String::new(),
-        };
+            pending: VecDeque::new(),
+            dialogue: None,
+        }
+    }
+
+    /// Connects to the server and starts the network thread.
+    fn new(ctx: &egui::Context, host: &str, port: u16) -> TapApp {
+        let mut app = TapApp::empty();
         let stream = match TcpStream::connect((host, port)) {
             Ok(s) => s,
             Err(e) => {
@@ -191,27 +203,79 @@ impl TapApp {
             return;
         };
         match writer.write_all(format!("{command}\n").as_bytes()) {
-            Ok(()) => self.log.push(format!("> {command}")),
+            Ok(()) => {
+                self.pending.push_back(command.to_string());
+                self.log.push(format!("> {command}"));
+            }
             Err(e) => self.log.push(format!("Send error: {e}")),
         }
     }
+
+    /// Handles one line from the server: a reply is matched with the command
+    /// it answers, then the line goes to the log.
+    fn receive(&mut self, line: String) {
+        let command = if is_reply(&line) {
+            self.pending.pop_front()
+        } else {
+            None
+        };
+        if let Some(command) = command {
+            self.handle_reply(&command, &line);
+        }
+        self.log.push(line);
+    }
+
+    /// Updates the window from the reply `line` to `command`.
+    fn handle_reply(&mut self, command: &str, line: &str) {
+        let (verb, arg) = command.split_once(' ').unwrap_or((command, ""));
+        match verb.to_uppercase().as_str() {
+            "LOOK" => {
+                if let Some(look) = parse_look(line) {
+                    // A new room: the last dialogue belongs to the old one.
+                    if self.room.as_ref().map(|r| &r.room.id) != Some(&look.room.id) {
+                        self.dialogue = None;
+                    }
+                    self.room = Some(look);
+                }
+            }
+            "INVENTORY" => {
+                if let Some(items) = parse_inventory(line) {
+                    self.inventory = Some(items);
+                }
+            }
+            "WHO" => {
+                if let Some(count) = parse_who(line) {
+                    self.server_players = Some(count);
+                }
+            }
+            "TALK" => {
+                if let Some(text) = line.strip_prefix("OK ") {
+                    self.dialogue = Some((arg.to_string(), text.to_string()));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// True for a reply to a command (`OK ...` or `ERR ...`).
+/// The greeting `OK hello` and the `EVT` lines answer no command.
+fn is_reply(line: &str) -> bool {
+    let is_ok = line == "OK" || line.starts_with("OK ");
+    (is_ok && !line.starts_with("OK hello")) || line.starts_with("ERR ")
 }
 
 impl eframe::App for TapApp {
     /// Called on every frame: draws the whole window from the current state.
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Move every line received since the last frame into the log.
-        if let Some(receiver) = &self.receiver {
-            while let Ok(line) = receiver.try_recv() {
-                if let Some(look) = parse_look(&line) {
-                    self.room = Some(look);
-                } else if let Some(items) = parse_inventory(&line) {
-                    self.inventory = Some(items);
-                } else if let Some(count) = parse_who(&line) {
-                    self.server_players = Some(count);
-                }
-                self.log.push(line);
-            }
+        // Handle every line received since the last frame. They are collected
+        // first because `receive` needs `self` while `receiver` borrows it.
+        let lines: Vec<String> = match &self.receiver {
+            Some(receiver) => receiver.try_iter().collect(),
+            None => vec![],
+        };
+        for line in lines {
+            self.receive(line);
         }
 
         // Buttons only add commands to this list: they are sent after drawing,
@@ -232,6 +296,9 @@ impl eframe::App for TapApp {
             show_counters(ui, self.room.as_ref(), self.server_players);
             if let Some(look) = &self.room {
                 show_room(ui, look, &mut commands);
+                if let Some((npc, text)) = &self.dialogue {
+                    show_dialogue(ui, npc, text);
+                }
                 ui.separator();
             }
             ui.horizontal(|ui| {
@@ -341,6 +408,14 @@ fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
     }
 }
 
+/// Draws the last thing an NPC said, in a framed box.
+fn show_dialogue(ui: &mut egui::Ui, npc: &str, text: &str) {
+    ui.group(|ui| {
+        ui.strong(format!("{} says:", display_name(npc)));
+        ui.label(format!("\u{201c}{text}\u{201d}"));
+    });
+}
+
 /// Draws the GROUP buttons. INVITE takes a player name, JOIN a group id.
 fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>) {
     ui.horizontal(|ui| {
@@ -442,6 +517,37 @@ mod tests {
         assert_eq!(display_name("torch"), "Torch");
         assert_eq!(display_name("cell_key"), "Cell Key");
         assert_eq!(display_name("npc.old_merchant"), "Old Merchant");
+    }
+
+    #[test]
+    fn replies_go_to_the_command_they_answer() {
+        let mut app = TapApp::empty();
+        app.pending.push_back("QUESTS".to_string());
+        app.pending.push_back("INVENTORY".to_string());
+        app.pending.push_back("TALK merchant".to_string());
+
+        app.receive("OK hello proto=1".to_string());
+        // `OK []` answers QUESTS here: it must not empty the inventory.
+        app.receive("OK []".to_string());
+        assert!(app.inventory.is_none());
+        app.receive(r#"OK ["torch"]"#.to_string());
+        assert_eq!(app.inventory, Some(vec!["torch".to_string()]));
+        app.receive("OK Take a sword!".to_string());
+        assert_eq!(
+            app.dialogue,
+            Some(("merchant".to_string(), "Take a sword!".to_string()))
+        );
+        assert!(app.pending.is_empty());
+        assert_eq!(app.log.len(), 4);
+    }
+
+    #[test]
+    fn is_reply_skips_greeting_and_events() {
+        assert!(is_reply("OK"));
+        assert!(is_reply("OK taken=torch"));
+        assert!(is_reply("ERR 404 ITEM_NOT_FOUND"));
+        assert!(!is_reply("OK hello proto=1"));
+        assert!(!is_reply("EVT ROOM PRESENCE ENTER bob"));
     }
 
     #[test]
