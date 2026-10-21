@@ -3,12 +3,14 @@
 //! - `network`: connection thread, lines from the server to the window
 //! - `protocol`: reading the server replies (RFC 42TAP)
 //! - `app`: window state, commands sent and replies received
-//! - `view`: drawing the window
+//! - `view`: drawing helpers (room, player, counters, buttons)
+//! - `window`: the window layout, one panel per zone
 
 mod app;
 mod network;
 mod protocol;
 mod view;
+mod window;
 
 use std::env;
 use std::process::ExitCode;
@@ -52,7 +54,11 @@ fn main() -> ExitCode {
         }
     };
 
-    let options = eframe::NativeOptions::default();
+    // Big enough for the room in the middle and a panel on each side.
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([1200.0, 750.0]),
+        ..Default::default()
+    };
     let result = eframe::run_native(
         "TAP",
         options,

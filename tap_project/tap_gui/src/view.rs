@@ -1,8 +1,8 @@
-//! Drawing the window: room, player, counters and buttons.
+//! Drawing helpers: room, player, counters and buttons.
+//! `window.rs` places them in the panels of the window.
 
 use eframe::egui;
 
-use crate::app::TapApp;
 use crate::protocol::{AttackResult, Health, Look, QuestInfo};
 
 /// Turns an id into a name for people: `item.loaf_bread` -> `Loaf Bread`.
@@ -34,7 +34,7 @@ fn join_or_dash(list: &[String]) -> String {
 
 /// Draws the player counters: in this room (from LOOK) and on the server (from WHO).
 /// Shows `?` while the reply has not arrived yet.
-fn show_counters(ui: &mut egui::Ui, look: Option<&Look>, server_players: Option<usize>) {
+pub fn show_counters(ui: &mut egui::Ui, look: Option<&Look>, server_players: Option<usize>) {
     let in_room = look.map_or("?".to_string(), |l| l.players.len().to_string());
     let on_server = server_players.map_or("?".to_string(), |n| n.to_string());
     ui.label(format!(
@@ -43,7 +43,7 @@ fn show_counters(ui: &mut egui::Ui, look: Option<&Look>, server_players: Option<
 }
 
 /// Draws the room panel from the last LOOK reply, with one button per action.
-fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
+pub fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
     ui.horizontal(|ui| {
         ui.heading(&look.room.name);
         ui.weak(&look.room.id);
@@ -102,8 +102,31 @@ fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
     }
 }
 
+/// Draws the inventory, one Drop button per item.
+/// Shows `?` before the first INVENTORY reply and `-` when it is empty.
+pub fn show_inventory(ui: &mut egui::Ui, inventory: Option<&[String]>, commands: &mut Vec<String>) {
+    ui.strong("Inventory");
+    match inventory {
+        None => {
+            ui.label("?");
+        }
+        Some([]) => {
+            ui.label("-");
+        }
+        Some(items) => {
+            for item in items {
+                let button = ui.button(format!("Drop {}", display_name(item)));
+                if button.on_hover_text(item).clicked() {
+                    commands.push(format!("DROP {item}"));
+                    push_refresh(commands);
+                }
+            }
+        }
+    }
+}
+
 /// Draws the last thing an NPC said, in a framed box.
-fn show_dialogue(ui: &mut egui::Ui, npc: &str, text: &str) {
+pub fn show_dialogue(ui: &mut egui::Ui, npc: &str, text: &str) {
     ui.group(|ui| {
         ui.strong(format!("{} says:", display_name(npc)));
         ui.label(format!("\u{201c}{text}\u{201d}"));
@@ -111,7 +134,7 @@ fn show_dialogue(ui: &mut egui::Ui, npc: &str, text: &str) {
 }
 
 /// Draws the player panel: health bar, last attack and known quests.
-fn show_character(
+pub fn show_character(
     ui: &mut egui::Ui,
     health: Option<&Health>,
     last_attack: Option<&(String, AttackResult)>,
@@ -163,7 +186,7 @@ fn show_character(
 
 /// Draws the GROUP buttons. INVITE takes a player name, JOIN the group leader's
 /// name (RFC 5.3.3).
-fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>) {
+pub fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>) {
     ui.horizontal(|ui| {
         ui.label("Group:");
         if ui.button("CREATE").clicked() {
@@ -185,93 +208,10 @@ fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>
 
 /// Adds LOOK, INVENTORY and WHO, so the room, the inventory and the counters
 /// are shown again.
-fn push_refresh(commands: &mut Vec<String>) {
+pub fn push_refresh(commands: &mut Vec<String>) {
     commands.push("LOOK".to_string());
     commands.push("INVENTORY".to_string());
     commands.push("WHO".to_string());
-}
-
-impl eframe::App for TapApp {
-    /// Called on every frame: draws the whole window from the current state.
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Handle every line received since the last frame. They are collected
-        // first because `receive` needs `self` while `receiver` borrows it.
-        let lines: Vec<String> = match &self.receiver {
-            Some(receiver) => receiver.try_iter().collect(),
-            None => vec![],
-        };
-        for line in lines {
-            self.receive(line);
-        }
-
-        // Buttons only add commands to this list: they are sent after drawing,
-        // because the drawing code already borrows parts of `self`.
-        let mut commands: Vec<String> = Vec::new();
-
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("TAP");
-            ui.horizontal(|ui| {
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut self.name);
-                if ui.button("Connect").clicked() {
-                    commands.push(format!("CONNECT {}", self.name.trim()));
-                    push_refresh(&mut commands);
-                    commands.push("STATUS".to_string());
-                    commands.push("QUESTS".to_string());
-                }
-            });
-            ui.separator();
-            show_counters(ui, self.room.as_ref(), self.server_players);
-            if let Some(look) = &self.room {
-                show_room(ui, look, &mut commands);
-                if let Some((npc, text)) = &self.dialogue {
-                    show_dialogue(ui, npc, text);
-                }
-                ui.separator();
-            }
-            ui.horizontal(|ui| {
-                ui.label("Inventory:");
-                if let Some(items) = &self.inventory {
-                    if items.is_empty() {
-                        ui.label("-");
-                    }
-                    for item in items {
-                        let button = ui.button(format!("Drop {}", display_name(item)));
-                        if button.on_hover_text(item).clicked() {
-                            commands.push(format!("DROP {item}"));
-                            push_refresh(&mut commands);
-                        }
-                    }
-                }
-            });
-            show_character(
-                ui,
-                self.health.as_ref(),
-                self.last_attack.as_ref(),
-                &self.quests,
-            );
-            ui.horizontal_wrapped(|ui| {
-                for command in ["LOOK", "INVENTORY", "STATUS", "QUESTS", "WHO", "QUIT"] {
-                    if ui.button(command).clicked() {
-                        commands.push(command.to_string());
-                    }
-                }
-            });
-            show_group(ui, &mut self.group_target, &mut commands);
-            ui.separator();
-            egui::ScrollArea::vertical()
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    for line in &self.log {
-                        ui.label(line);
-                    }
-                });
-        });
-
-        for command in commands {
-            self.send(&command);
-        }
-    }
 }
 
 #[cfg(test)]
