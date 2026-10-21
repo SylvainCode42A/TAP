@@ -8,6 +8,7 @@ use std::thread;
 
 use eframe::egui;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 7878;
@@ -100,6 +101,63 @@ fn parse_inventory(line: &str) -> Option<Vec<String>> {
     serde_json::from_str(json).ok()
 }
 
+/// Player health from STATUS (RFC 5.4.6).
+#[derive(Deserialize)]
+struct Health {
+    hp: i64,
+    max_hp: i64,
+    #[serde(default)]
+    status: String,
+}
+
+/// Result of one ATTACK (RFC 5.4.5).
+#[derive(Deserialize)]
+struct AttackResult {
+    damage: i64,
+    target_hp: i64,
+    #[serde(default)]
+    status: String,
+}
+
+/// One quest from QUEST or QUESTS (RFC 5.4.7 / 5.4.8).
+/// QUESTS sends no description or reward, so they are optional.
+#[derive(Deserialize)]
+struct QuestInfo {
+    quest_id: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    reward: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    progress: String,
+}
+
+/// Reads the JSON after `OK ` into any type. Returns None if it does not fit.
+fn parse_json<T: DeserializeOwned>(line: &str) -> Option<T> {
+    let json = line.strip_prefix("OK ")?;
+    serde_json::from_str(json).ok()
+}
+
+/// Puts the quests from a QUESTS reply in `quests`, keeping the description
+/// and reward already known from QUEST (QUESTS does not send them).
+fn merge_quests(quests: &mut Vec<QuestInfo>, new_list: Vec<QuestInfo>) {
+    let mut merged = Vec::new();
+    for mut quest in new_list {
+        if let Some(old) = quests.iter().find(|q| q.quest_id == quest.quest_id) {
+            if quest.description.is_empty() {
+                quest.description = old.description.clone();
+            }
+            if quest.reward.is_empty() {
+                quest.reward = old.reward.clone();
+            }
+        }
+        merged.push(quest);
+    }
+    *quests = merged;
+}
+
 /// Reads a WHO reply like `OK players=3`. Returns None for any other line.
 fn parse_who(line: &str) -> Option<usize> {
     line.strip_prefix("OK players=")?.trim().parse().ok()
@@ -155,6 +213,12 @@ struct TapApp {
     pending: VecDeque<String>,
     /// Last TALK answer: (NPC id, what the NPC said).
     dialogue: Option<(String, String)>,
+    /// Player health, from the last STATUS reply.
+    health: Option<Health>,
+    /// Last ATTACK: (NPC id, result).
+    last_attack: Option<(String, AttackResult)>,
+    /// Known quests, from QUEST and QUESTS.
+    quests: Vec<QuestInfo>,
 }
 
 impl TapApp {
@@ -171,6 +235,9 @@ impl TapApp {
             group_target: String::new(),
             pending: VecDeque::new(),
             dialogue: None,
+            health: None,
+            last_attack: None,
+            quests: vec![],
         }
     }
 
@@ -253,6 +320,27 @@ impl TapApp {
                     self.dialogue = Some((arg.to_string(), text.to_string()));
                 }
             }
+            "STATUS" => {
+                if let Some(health) = parse_json(line) {
+                    self.health = Some(health);
+                }
+            }
+            "ATTACK" => {
+                if let Some(result) = parse_json(line) {
+                    self.last_attack = Some((arg.to_string(), result));
+                }
+            }
+            "QUEST" => {
+                if let Some(quest) = parse_json::<QuestInfo>(line) {
+                    self.quests.retain(|q| q.quest_id != quest.quest_id);
+                    self.quests.push(quest);
+                }
+            }
+            "QUESTS" => {
+                if let Some(list) = parse_json(line) {
+                    merge_quests(&mut self.quests, list);
+                }
+            }
             _ => {}
         }
     }
@@ -290,6 +378,8 @@ impl eframe::App for TapApp {
                 if ui.button("Connect").clicked() {
                     commands.push(format!("CONNECT {}", self.name.trim()));
                     push_refresh(&mut commands);
+                    commands.push("STATUS".to_string());
+                    commands.push("QUESTS".to_string());
                 }
             });
             ui.separator();
@@ -316,6 +406,12 @@ impl eframe::App for TapApp {
                     }
                 }
             });
+            show_character(
+                ui,
+                self.health.as_ref(),
+                self.last_attack.as_ref(),
+                &self.quests,
+            );
             ui.horizontal_wrapped(|ui| {
                 for command in ["LOOK", "INVENTORY", "STATUS", "QUESTS", "WHO", "QUIT"] {
                     if ui.button(command).clicked() {
@@ -402,6 +498,11 @@ fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
             for action in ["TALK", "ATTACK", "QUEST"] {
                 if ui.button(action).clicked() {
                     commands.push(format!("{action} {npc}"));
+                    if action == "ATTACK" {
+                        // New health, and the NPC may be gone from the room.
+                        commands.push("STATUS".to_string());
+                        push_refresh(commands);
+                    }
                 }
             }
         });
@@ -414,6 +515,57 @@ fn show_dialogue(ui: &mut egui::Ui, npc: &str, text: &str) {
         ui.strong(format!("{} says:", display_name(npc)));
         ui.label(format!("\u{201c}{text}\u{201d}"));
     });
+}
+
+/// Draws the player panel: health bar, last attack and known quests.
+fn show_character(
+    ui: &mut egui::Ui,
+    health: Option<&Health>,
+    last_attack: Option<&(String, AttackResult)>,
+    quests: &[QuestInfo],
+) {
+    ui.horizontal(|ui| {
+        ui.label("HP:");
+        match health {
+            Some(h) if h.max_hp > 0 => {
+                let fraction = (h.hp as f32 / h.max_hp as f32).clamp(0.0, 1.0);
+                let text = format!("{} / {} ({})", h.hp, h.max_hp, h.status);
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .text(text)
+                        .desired_width(220.0),
+                );
+            }
+            _ => {
+                ui.label("?");
+            }
+        }
+    });
+    if let Some((npc, result)) = last_attack {
+        ui.label(format!(
+            "You hit {} for {} damage: {} HP left ({}).",
+            display_name(npc),
+            result.damage,
+            result.target_hp,
+            result.status
+        ));
+    }
+    if quests.is_empty() {
+        ui.label("Quests: -");
+    }
+    for quest in quests {
+        let mut text = format!("Quest {}: {}", display_name(&quest.quest_id), quest.status);
+        if !quest.progress.is_empty() {
+            text.push_str(&format!(" ({})", quest.progress));
+        }
+        if !quest.description.is_empty() {
+            text.push_str(&format!(" - {}", quest.description));
+        }
+        if !quest.reward.is_empty() {
+            text.push_str(&format!(" Reward: {}.", quest.reward));
+        }
+        ui.label(text);
+    }
 }
 
 /// Draws the GROUP buttons. INVITE takes a player name, JOIN a group id.
@@ -539,6 +691,33 @@ mod tests {
         );
         assert!(app.pending.is_empty());
         assert_eq!(app.log.len(), 4);
+    }
+
+    #[test]
+    fn status_attack_and_quests_are_read() {
+        let mut app = TapApp::empty();
+        for command in ["STATUS", "ATTACK monster", "QUEST merchant", "QUESTS"] {
+            app.pending.push_back(command.to_string());
+        }
+        app.receive(r#"OK {"hp": 80, "max_hp": 100, "status": "combat"}"#.to_string());
+        app.receive(
+            r#"OK {"attacker_hp": 80, "target_hp": 15, "damage": 10, "status": "combat"}"#
+                .to_string(),
+        );
+        app.receive(r#"OK {"quest_id": "treasure_quest", "description": "Defeat the monster.", "reward": "victory", "status": "active"}"#.to_string());
+        app.receive(
+            r#"OK [{"quest_id": "treasure_quest", "status": "active", "progress": "0/1"}]"#
+                .to_string(),
+        );
+
+        let health = app.health.expect("STATUS read");
+        assert_eq!((health.hp, health.max_hp), (80, 100));
+        let (npc, attack) = app.last_attack.expect("ATTACK read");
+        assert_eq!((npc.as_str(), attack.target_hp), ("monster", 15));
+        assert_eq!(app.quests.len(), 1);
+        // QUESTS gave the progress, QUEST had given the description: both are kept.
+        assert_eq!(app.quests[0].progress, "0/1");
+        assert_eq!(app.quests[0].description, "Defeat the monster.");
     }
 
     #[test]
