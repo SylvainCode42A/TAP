@@ -88,16 +88,19 @@ impl eframe::App for TapApp {
             });
 
         // Center: the room and the last NPC dialogue.
-        egui::CentralPanel::default().show(ui, |ui| match &self.room {
-            Some(look) => {
-                show_room(ui, look, &mut commands);
-                if let Some((npc, text)) = &self.dialogue {
-                    show_dialogue(ui, npc, text);
+        egui::CentralPanel::default().show(ui, |ui| {
+            // The picture makes the room taller: on a small window it scrolls.
+            egui::ScrollArea::vertical().show(ui, |ui| match &self.room {
+                Some(look) => {
+                    show_room(ui, look, &mut commands);
+                    if let Some((npc, text)) = &self.dialogue {
+                        show_dialogue(ui, npc, text);
+                    }
                 }
-            }
-            None => {
-                ui.label("Type a name and click Connect to enter the world.");
-            }
+                None => {
+                    ui.label("Type a name and click Connect to enter the world.");
+                }
+            });
         });
 
         for command in commands {

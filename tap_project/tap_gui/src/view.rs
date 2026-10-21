@@ -3,6 +3,7 @@
 
 use eframe::egui;
 
+use crate::images::room_image;
 use crate::protocol::{AttackResult, Health, Look, QuestInfo};
 
 /// Turns an id into a name for people: `item.loaf_bread` -> `Loaf Bread`.
@@ -49,6 +50,10 @@ pub fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
         ui.weak(&look.room.id);
     });
     ui.label(&look.room.description);
+    if let Some(image) = room_image(&look.room.id) {
+        // As wide as the panel, but never taller than 320 points.
+        ui.add(egui::Image::new(image).max_height(320.0).corner_radius(6.0));
+    }
 
     ui.horizontal_wrapped(|ui| {
         ui.label("Exits:");
