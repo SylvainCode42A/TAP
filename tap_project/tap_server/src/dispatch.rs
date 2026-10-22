@@ -51,7 +51,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                                 };
 
                                 let look_from_js = serde_json::to_string(&look_resp).unwrap();
-                                Response::Ok(format!("{}", look_from_js))
+                                Response::Ok(look_from_js)
                             }
                             None => Response::Err { code: 404, message: "Current room not found".to_string() }
                         }
