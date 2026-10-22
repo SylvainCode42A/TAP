@@ -9,8 +9,10 @@
 //! - `window`: the window layout, one panel per zone
 //! - `log_panel`: the log, coloured by kind of line
 //! - `map`: the mini-map, built from the exits of each LOOK
+//! - `fade`: the fade-in of the room panel when the room changes
 
 mod app;
+mod fade;
 mod images;
 mod log_panel;
 mod map;

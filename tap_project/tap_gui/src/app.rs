@@ -8,6 +8,7 @@ use std::sync::mpsc::Receiver;
 
 use eframe::egui;
 
+use crate::fade::RoomFade;
 use crate::map::MiniMap;
 use crate::network::{CONNECTION_CLOSED, spawn_reader};
 use crate::protocol::{AttackResult, Health, Look, QuestInfo, is_reply};
@@ -45,6 +46,8 @@ pub struct TapApp {
     pub quests: Vec<QuestInfo>,
     /// Rooms seen so far, for the mini-map.
     pub map: MiniMap,
+    /// Fade-in of the room panel when the room changes.
+    pub fade: RoomFade,
 }
 
 impl TapApp {
@@ -66,6 +69,7 @@ impl TapApp {
             last_attack: None,
             quests: vec![],
             map: MiniMap::default(),
+            fade: RoomFade::default(),
         }
     }
 

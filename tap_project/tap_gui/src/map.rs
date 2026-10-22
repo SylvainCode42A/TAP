@@ -17,6 +17,9 @@ fn step(direction: &str) -> Option<(i32, i32)> {
     }
 }
 
+/// Seconds the square of the current room takes to slide to a new room.
+const SLIDE_SECONDS: f32 = 0.3;
+
 /// What the player knows of the world.
 #[derive(Default)]
 pub struct MiniMap {
@@ -71,8 +74,9 @@ impl MiniMap {
 }
 
 /// Draws the mini-map: links first, then one square per room.
-/// The room we are in is coloured, visited rooms are filled, the others
-/// (seen through an exit only) are just outlined. Hover a room to see its id.
+/// Visited rooms are filled, the others (seen through an exit only) are just
+/// outlined. The coloured square of the room we are in slides to its new
+/// place after a MOVE. Hover a room to see its id.
 pub fn show_map(ui: &mut egui::Ui, map: &MiniMap) {
     if map.cells.is_empty() {
         ui.label("-");
@@ -92,28 +96,28 @@ pub fn show_map(ui: &mut egui::Ui, map: &MiniMap) {
     let (response, painter) = ui.allocate_painter(size, egui::Sense::hover());
     let left = response.rect.center().x - cell * columns / 2.0;
     let top = response.rect.top();
-    let center_of = |(x, y): (i32, i32)| {
+    // Takes f32 grid coordinates, so the sliding square can be between cells.
+    let center_of = |x: f32, y: f32| {
         egui::pos2(
-            left + (x - min_x) as f32 * cell + cell / 2.0,
-            top + (y - min_y) as f32 * cell + cell / 2.0,
+            left + (x - min_x as f32) * cell + cell / 2.0,
+            top + (y - min_y as f32) * cell + cell / 2.0,
         )
     };
+    let center_of_cell = |(x, y): (i32, i32)| center_of(x as f32, y as f32);
 
     let visuals = ui.visuals();
     let line = egui::Stroke::new(2.0, visuals.weak_text_color());
     for (a, b) in &map.links {
         if let (Some(&ca), Some(&cb)) = (map.cells.get(a), map.cells.get(b)) {
-            painter.line_segment([center_of(ca), center_of(cb)], line);
+            painter.line_segment([center_of_cell(ca), center_of_cell(cb)], line);
         }
     }
 
     let half = egui::vec2(cell * 0.3, cell * 0.3);
     let mut hovered = None;
     for (room, &cell_pos) in &map.cells {
-        let square = egui::Rect::from_center_size(center_of(cell_pos), half * 2.0);
-        if map.current.as_ref() == Some(room) {
-            painter.rect_filled(square, 3.0, visuals.hyperlink_color);
-        } else if map.visited.contains(room) {
+        let square = egui::Rect::from_center_size(center_of_cell(cell_pos), half * 2.0);
+        if map.visited.contains(room) {
             painter.rect_filled(square, 3.0, visuals.weak_text_color());
         } else {
             painter.rect_filled(square, 3.0, visuals.panel_fill);
@@ -122,6 +126,15 @@ pub fn show_map(ui: &mut egui::Ui, map: &MiniMap) {
         if response.hover_pos().is_some_and(|pos| square.contains(pos)) {
             hovered = Some(room.clone());
         }
+    }
+    // The room we are in, drawn last so it is on top. egui moves it a little
+    // toward its target on each frame: the first time, it is placed directly.
+    if let Some(&(x, y)) = map.current.as_ref().and_then(|room| map.cells.get(room)) {
+        let ctx = ui.ctx();
+        let x = ctx.animate_value_with_time(egui::Id::unique("map_x"), x as f32, SLIDE_SECONDS);
+        let y = ctx.animate_value_with_time(egui::Id::unique("map_y"), y as f32, SLIDE_SECONDS);
+        let square = egui::Rect::from_center_size(center_of(x, y), half * 2.0);
+        painter.rect_filled(square, 3.0, visuals.hyperlink_color);
     }
     if let Some(room) = hovered {
         response.on_hover_text(room);

@@ -91,6 +91,13 @@ impl eframe::App for TapApp {
             // The picture makes the room taller: on a small window it scrolls.
             egui::ScrollArea::vertical().show(ui, |ui| match &self.room {
                 Some(look) => {
+                    // A new room fades in; egui redraws until it is done.
+                    let now = ui.input(|i| i.time);
+                    let opacity = self.fade.opacity(&look.room.id, now);
+                    if opacity < 1.0 {
+                        ui.ctx().request_repaint();
+                    }
+                    ui.set_opacity(opacity);
                     show_room(ui, look, &mut commands);
                     if let Some((npc, text)) = &self.dialogue {
                         show_dialogue(ui, npc, text);
