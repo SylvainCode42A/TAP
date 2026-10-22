@@ -9,6 +9,7 @@ mod combat;
 mod dispatch;
 mod events;
 mod group;
+mod items;
 mod parsing;
 mod quest;
 mod world_check;

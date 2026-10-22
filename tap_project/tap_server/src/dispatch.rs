@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use crate::{Command, Response, GameState, Player};
-use crate::{combat, events, group, quest};
+use crate::{combat, events, group, items, quest};
 use crate::RoomInfo;
 use crate::LookResponse;
 
@@ -96,59 +96,15 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             }
         },
 
-        Command::Take { item } => {
-            match current_username {
-                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-                Some(username) => {
-                    let mut gs = game_state.lock().unwrap();
-                    let current_room = match gs.players.get(username) {
-                        None => return Response::Err { code: 404, message: "Player not connected".to_string() },
-                        Some(player) => player.current_room.clone(),
-                    };
-                    match gs.world.world.locations.get_mut(&current_room) {
-                        None => Response::Err { code: 404, message: "Current room not found".to_string() },
-                        Some(room) => {
-                            if !room.items.contains(&item) {
-                                Response::Err { code: 404, message: "ITEM_NOT_FOUND".to_string() }
-                            } else {
-                                room.items.retain(|i| i != &item);
-                                if let Some(p) = gs.players.get_mut(username) {
-                                    p.inventory.push(item.clone());
-                                }
-                                Response::Ok(format!("taken={}", item))
-                            }
-                        }
-                    }
-                }
-            }
+        // RFC 8.3: an item is named by its id or its display name.
+        Command::Take { item } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => items::take_item(&mut game_state.lock().unwrap(), username, &item),
         },
 
-        Command::Drop { item } => {
-            match current_username {
-                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-                Some(username) => {
-                    let mut gs = game_state.lock().unwrap();
-                    let current_room = match gs.players.get_mut(username) {
-                        None => return Response::Err { code: 404, message: "Player not connected".to_string() },
-                        Some(player) => player.current_room.clone(),
-                    };
-                    let has_item = match gs.players.get(username) {
-                        None => return Response::Err { code: 404, message: "Player not in room".to_string() },
-                        Some(player) => player.inventory.contains(&item)
-                    };
-                    if !has_item {
-                        Response::Err { code: 404, message: "ITEM_NOT_IN_INVENTORY".to_string() }
-                    } else {
-                        if let Some(player) = gs.players.get_mut(username) {
-                            player.inventory.retain(|i| i != &item)
-                        }
-                        if let Some(room) = gs.world.world.locations.get_mut(&current_room) {
-                            room.items.push(item.clone());
-                        }
-                        Response::Ok(format!("dropped={}", item))
-                    }
-                }
-            }
+        Command::Drop { item } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => items::drop_item(&mut game_state.lock().unwrap(), username, &item),
         },
 
         Command::Inventory => {
