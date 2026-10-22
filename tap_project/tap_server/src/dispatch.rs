@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use crate::{Command, Response, GameState, Player};
-use crate::{combat, group, quest};
+use crate::{combat, events, group, quest};
 use crate::RoomInfo;
 use crate::LookResponse;
 
@@ -11,7 +11,11 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             if gs.players.contains_key(&username) {
                 Response::Err { code: 201, message: "NAME_IN_USE".to_string() }
             } else {
-                gs.players.insert(username.clone(), Player::new(&username));
+                let player = Player::new(&username);
+                let room = player.current_room.clone();
+                gs.players.insert(username.clone(), player);
+                events::enter(&gs, &username, &room);
+                events::players_count(&gs);
                 Response::Ok(format!("{} connected", username))
             }
         },
@@ -74,9 +78,12 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                                     match room.exits.get(&direction.to_lowercase()).cloned() {
                                         None => Response::Err { code: 301, message: "NO_EXIT".to_string() },
                                         Some(new_room) => {
-                                            if let Some(p) = gs.players.get_mut(username) {
-                                                p.current_room = new_room.clone();
+                                            let from = gs.players.get_mut(username).map(|p| {
                                                 p.in_combat = None;
+                                                std::mem::replace(&mut p.current_room, new_room.clone())
+                                            });
+                                            if let Some(from) = from {
+                                                events::moved(&gs, username, &from);
                                             }
                                             Response::Ok(format!("room=next_is_{}", new_room))
                                         }
@@ -183,7 +190,16 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
 
         Command::Attack { target } => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => combat::attack(&mut game_state.lock().unwrap(), username, &target),
+            Some(username) => {
+                // A defeat sends the player back to the entrance.
+                let mut gs = game_state.lock().unwrap();
+                let from = gs.players.get(username).map(|p| p.current_room.clone());
+                let reply = combat::attack(&mut gs, username, &target);
+                if let Some(from) = from {
+                    events::moved(&gs, username, &from);
+                }
+                reply
+            }
         },
 
         Command::Status => match current_username {
@@ -212,22 +228,57 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
 
         Command::GroupInvite { username: target } => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => group::invite(&mut game_state.lock().unwrap(), username, &target),
+            Some(username) => {
+                let mut gs = game_state.lock().unwrap();
+                let reply = group::invite(&mut gs, username, &target);
+                if let Response::Ok(_) = reply {
+                    events::group_invite(&gs, username, &target);
+                }
+                reply
+            }
         },
 
         // RFC 5.3.3: the argument of GROUP JOIN is the leader's name.
         Command::GroupJoin { group_id: leader } => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => group::join(&mut game_state.lock().unwrap(), username, &leader),
+            Some(username) => {
+                let mut gs = game_state.lock().unwrap();
+                let reply = group::join(&mut gs, username, &leader);
+                if let Response::Ok(_) = reply {
+                    events::group_join(&gs, username);
+                }
+                reply
+            }
         },
 
         Command::GroupLeave => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => group::leave(&mut game_state.lock().unwrap(), username),
+            Some(username) => {
+                let mut gs = game_state.lock().unwrap();
+                let mates = events::group_mates(&gs, username);
+                let reply = group::leave(&mut gs, username);
+                if let Response::Ok(_) = reply {
+                    events::group_leave(&gs, username, &mates);
+                }
+                reply
+            }
         },
-        Command::ChatGlobal { message } => Response::Err { code: 404, message: format!("ChatGlobal not found to send {}", message) },
-        Command::ChatRoom { message } => Response::Err { code: 404, message: format!("ChatRoom not found to send {}", message) },
-        Command::ChatGroup { message } => Response::Err { code: 404, message: format!("ChatGroup not found to send {}", message) },
+
+        Command::ChatGlobal { message } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => events::chat_global(&game_state.lock().unwrap(), username, &message),
+        },
+
+        Command::ChatRoom { message } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => events::chat_room(&game_state.lock().unwrap(), username, &message),
+        },
+
+        Command::ChatGroup { message } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => events::chat_group(&game_state.lock().unwrap(), username, &message),
+        },
+
         Command::Quit => Response::Ok("bye".to_string()),
     }
 }

@@ -7,6 +7,7 @@ use std::fs;
 use std::sync::{Arc, Mutex};
 mod combat;
 mod dispatch;
+mod events;
 mod group;
 mod parsing;
 mod quest;

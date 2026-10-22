@@ -2,7 +2,7 @@ use std::net::TcpStream;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::{Arc, Mutex};
 use crate::{Command, Response, GameState};
-use crate::dispatch;
+use crate::{dispatch, events};
 use crate::send_error_mess;
 
 pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
@@ -238,11 +238,6 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 }
 
                 if should_quit {
-                    if let Some(username) = &current_username {
-                        let mut gs = game_state.lock().unwrap();
-                        gs.players.remove(username);
-                        gs.senders.remove(username);
-                    }
                     break;
                 }
             },
@@ -252,5 +247,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 break;
             },
         }
+    }
+
+    // QUIT, end of file or read error: the player leaves the game alike.
+    if let Some(username) = &current_username {
+        events::disconnect(&mut game_state.lock().unwrap(), username);
     }
 }
