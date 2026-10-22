@@ -1,3 +1,12 @@
+//! Reading side of one client connection: the greeting, each line into a
+//! `Command`, the reply written back, the departure.
+//!
+//! - Owns: RFC 4 framing (one `\n`-terminated line per command), keyword
+//!   matching ignoring case, argument counts, writing `OK` and `ERR`,
+//!   session logs and flood detection.
+//! - Does NOT own: what a command does (`dispatch.rs`), events
+//!   (`events.rs`).
+
 use crate::send_error_mess;
 use crate::{Command, GameState, Response};
 use crate::{dispatch, events, logging};
@@ -10,6 +19,16 @@ use std::time::Instant;
 /// Longest command line accepted, end of line included, RFC 9.4.
 const MAX_LINE: usize = 1024;
 
+/// Serves one client, on its own thread, until QUIT or disconnection.
+///
+/// Sends `OK hello proto=1`, then for each line: parse it into a
+/// `Command`, run it through `dispatch`, write the reply. A malformed line
+/// gets its `ERR` here and never reaches dispatch. After a successful
+/// CONNECT the stream joins `GameState::senders`, for events. However the
+/// session ends, `events::disconnect` then removes the player.
+///
+/// One `BufReader` serves the whole session: rebuilt for each line, it
+/// dropped the commands that arrived in the same TCP packet (issue #36).
 pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
     let mut current_username: Option<String> = None;
     let mut reader = match stream.try_clone() {

@@ -47,6 +47,8 @@ static SINK: OnceLock<Sender<String>> = OnceLock::new();
 
 // MARK: - Output
 
+/// INFO for normal traffic, WARN for client mistakes and abuse (every
+/// `ERR` reply), ERROR for failures on the server side.
 #[derive(Clone, Copy)]
 pub enum Level {
     Info,
