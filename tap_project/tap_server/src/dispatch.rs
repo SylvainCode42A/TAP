@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use crate::{Command, Response, GameState, Player};
-use crate::{combat, group, quest};
+use crate::{combat, events, group, items, quest};
 use crate::RoomInfo;
 use crate::LookResponse;
 
@@ -11,8 +11,13 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             if gs.players.contains_key(&username) {
                 Response::Err { code: 201, message: "NAME_IN_USE".to_string() }
             } else {
-                gs.players.insert(username.clone(), Player::new(&username));
-                Response::Ok(format!("{} connected", username))
+                let player = Player::new(&username);
+                let room = player.current_room.clone();
+                gs.players.insert(username.clone(), player);
+                events::enter(&gs, &username, &room);
+                events::players_count(&gs);
+                // RFC 5.1.1: the reply is exactly "OK connected".
+                Response::Ok("connected".to_string())
             }
         },
 
@@ -47,7 +52,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                                 };
 
                                 let look_from_js = serde_json::to_string(&look_resp).unwrap();
-                                Response::Ok(format!("{}", look_from_js))
+                                Response::Ok(look_from_js)
                             }
                             None => Response::Err { code: 404, message: "Current room not found".to_string() }
                         }
@@ -74,11 +79,14 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                                     match room.exits.get(&direction.to_lowercase()).cloned() {
                                         None => Response::Err { code: 301, message: "NO_EXIT".to_string() },
                                         Some(new_room) => {
-                                            if let Some(p) = gs.players.get_mut(username) {
-                                                p.current_room = new_room.clone();
+                                            let from = gs.players.get_mut(username).map(|p| {
                                                 p.in_combat = None;
+                                                std::mem::replace(&mut p.current_room, new_room.clone())
+                                            });
+                                            if let Some(from) = from {
+                                                events::moved(&gs, username, &from);
                                             }
-                                            Response::Ok(format!("room=next_is_{}", new_room))
+                                            Response::Ok(format!("room={}", new_room))
                                         }
                                     }
                                 }
@@ -89,59 +97,15 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
             }
         },
 
-        Command::Take { item } => {
-            match current_username {
-                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-                Some(username) => {
-                    let mut gs = game_state.lock().unwrap();
-                    let current_room = match gs.players.get(username) {
-                        None => return Response::Err { code: 404, message: "Player not connected".to_string() },
-                        Some(player) => player.current_room.clone(),
-                    };
-                    match gs.world.world.locations.get_mut(&current_room) {
-                        None => Response::Err { code: 404, message: "Current room not found".to_string() },
-                        Some(room) => {
-                            if !room.items.contains(&item) {
-                                Response::Err { code: 404, message: "ITEM_NOT_FOUND".to_string() }
-                            } else {
-                                room.items.retain(|i| i != &item);
-                                if let Some(p) = gs.players.get_mut(username) {
-                                    p.inventory.push(item.clone());
-                                }
-                                Response::Ok(format!("taken={}", item))
-                            }
-                        }
-                    }
-                }
-            }
+        // RFC 8.3: an item is named by its id or its display name.
+        Command::Take { item } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => items::take_item(&mut game_state.lock().unwrap(), username, &item),
         },
 
-        Command::Drop { item } => {
-            match current_username {
-                None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-                Some(username) => {
-                    let mut gs = game_state.lock().unwrap();
-                    let current_room = match gs.players.get_mut(username) {
-                        None => return Response::Err { code: 404, message: "Player not connected".to_string() },
-                        Some(player) => player.current_room.clone(),
-                    };
-                    let has_item = match gs.players.get(username) {
-                        None => return Response::Err { code: 404, message: "Player not in room".to_string() },
-                        Some(player) => player.inventory.contains(&item)
-                    };
-                    if !has_item {
-                        Response::Err { code: 404, message: "ITEM_NOT_IN_INVENTORY".to_string() }
-                    } else {
-                        if let Some(player) = gs.players.get_mut(username) {
-                            player.inventory.retain(|i| i != &item)
-                        }
-                        if let Some(room) = gs.world.world.locations.get_mut(&current_room) {
-                            room.items.push(item.clone());
-                        }
-                        Response::Ok(format!("dropped={}", item))
-                    }
-                }
-            }
+        Command::Drop { item } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => items::drop_item(&mut game_state.lock().unwrap(), username, &item),
         },
 
         Command::Inventory => {
@@ -151,7 +115,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                     let gs = game_state.lock().unwrap();
                     match gs.players.get(username) {
                         None => Response::Err { code: 404, message: "Player not CONNECTED".to_string() },
-                        Some(player) => Response::Ok(format!("{:?}", player.inventory)),
+                        Some(player) => Response::Ok(serde_json::to_string(&player.inventory).unwrap()),
                     }
                 }
             }
@@ -162,28 +126,44 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                 None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
                 Some(username) => {
                     let mut gs = game_state.lock().unwrap();
-                    match gs.world.world.npcs.get(&npc) {
-                        None => Response::Err { code: 404, message: "NPC_NOT_FOUND".to_string() },
-                        Some(npc_data) => {
-                            let dialogue = npc_data.dialogue.clone();
-                            match gs.players.get_mut(username) {
-                                None => Response::Err { code: 404, message: "Player not CONNECTED".to_string() },
-                                Some(player) => {
-                                    let index = player.talk_progress.entry(npc.clone()).or_insert(0);
-                                    let phrase = dialogue[*index % dialogue.len()].clone();
-                                    *index += 1;
-                                    Response::Ok(phrase)
-                                }
-                            }
-                        }
-                    }
+                    let Some(room) = gs.players.get(username).map(|p| p.current_room.clone()) else {
+                        return Response::Err { code: 404, message: "Player not CONNECTED".to_string() };
+                    };
+                    // RFC 8.2: NPC_NOT_FOUND when the NPC is not in this room.
+                    let Some(npc_id) = combat::find_npc_in_room(&gs, &room, &npc) else {
+                        return combat::npc_not_found();
+                    };
+                    // A spawn naming an NPC missing from world.yaml, or an
+                    // NPC with nothing to say: 404, never a panic.
+                    let dialogue = match gs.world.world.npcs.get(&npc_id) {
+                        Some(npc_data) if !npc_data.dialogue.is_empty() => npc_data.dialogue.clone(),
+                        _ => return combat::npc_not_found(),
+                    };
+                    let player = gs.players.get_mut(username).unwrap();
+                    let index = player.talk_progress.entry(npc_id).or_insert(0);
+                    let phrase = dialogue[*index % dialogue.len()].clone();
+                    *index += 1;
+                    Response::Ok(phrase)
                 }
             }
         },
 
         Command::Attack { target } => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => combat::attack(&mut game_state.lock().unwrap(), username, &target),
+            Some(username) => {
+                // The round is told to the room it was fought in; a defeat
+                // then sends the player back to the entrance.
+                let mut gs = game_state.lock().unwrap();
+                let from = gs.players.get(username).map(|p| p.current_room.clone());
+                let reply = combat::attack(&mut gs, username, &target);
+                if let Some(from) = from {
+                    if let Some(npc_id) = combat::find_npc_in_room(&gs, &from, &target) {
+                        events::combat(&gs, username, &from, &npc_id, &reply);
+                    }
+                    events::moved(&gs, username, &from);
+                }
+                reply
+            }
         },
 
         Command::Status => match current_username {
@@ -212,22 +192,118 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
 
         Command::GroupInvite { username: target } => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => group::invite(&mut game_state.lock().unwrap(), username, &target),
+            Some(username) => {
+                let mut gs = game_state.lock().unwrap();
+                let reply = group::invite(&mut gs, username, &target);
+                if let Response::Ok(_) = reply {
+                    events::group_invite(&gs, username, &target);
+                }
+                reply
+            }
         },
 
         // RFC 5.3.3: the argument of GROUP JOIN is the leader's name.
         Command::GroupJoin { group_id: leader } => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => group::join(&mut game_state.lock().unwrap(), username, &leader),
+            Some(username) => {
+                let mut gs = game_state.lock().unwrap();
+                let reply = group::join(&mut gs, username, &leader);
+                if let Response::Ok(_) = reply {
+                    events::group_join(&gs, username);
+                }
+                reply
+            }
         },
 
         Command::GroupLeave => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
-            Some(username) => group::leave(&mut game_state.lock().unwrap(), username),
+            Some(username) => {
+                let mut gs = game_state.lock().unwrap();
+                let mates = events::group_mates(&gs, username);
+                let reply = group::leave(&mut gs, username);
+                if let Response::Ok(_) = reply {
+                    events::group_leave(&gs, username, &mates);
+                }
+                reply
+            }
         },
-        Command::ChatGlobal { message } => Response::Err { code: 404, message: format!("ChatGlobal not found to send {}", message) },
-        Command::ChatRoom { message } => Response::Err { code: 404, message: format!("ChatRoom not found to send {}", message) },
-        Command::ChatGroup { message } => Response::Err { code: 404, message: format!("ChatGroup not found to send {}", message) },
+
+        Command::ChatGlobal { message } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => events::chat_global(&game_state.lock().unwrap(), username, &message),
+        },
+
+        Command::ChatRoom { message } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => events::chat_room(&game_state.lock().unwrap(), username, &message),
+        },
+
+        Command::ChatGroup { message } => match current_username {
+            None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
+            Some(username) => events::chat_group(&game_state.lock().unwrap(), username, &message),
+        },
+
         Command::Quit => Response::Ok("bye".to_string()),
+    }
+}
+
+// MARK: - Tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{game_with_player, ok_body};
+    use crate::Spawn;
+
+    /// Runs `cmd` as `username` on `gs`.
+    fn run(gs: &Arc<Mutex<GameState>>, username: &str, cmd: Command) -> Response {
+        dispatch(cmd, gs, &Some(username.to_string()))
+    }
+
+    fn talk(npc: &str) -> Command {
+        Command::Talk { npc: npc.to_string() }
+    }
+
+    #[test]
+    fn talk_needs_the_npc_in_the_room() {
+        // The merchant waits at the entrance, alice is in the corridor.
+        let gs = Arc::new(Mutex::new(game_with_player("alice", "corridor")));
+        assert!(matches!(run(&gs, "alice", talk("merchant")), Response::Err { code: 404, .. }));
+    }
+
+    #[test]
+    fn talk_takes_id_or_name_and_cycles() {
+        let gs = Arc::new(Mutex::new(game_with_player("alice", "entrance")));
+        let first = ok_body(run(&gs, "alice", talk("merchant")));
+        let second = ok_body(run(&gs, "alice", talk("Merchant")));
+        assert_ne!(first, second);
+        assert_eq!(ok_body(run(&gs, "alice", talk("merchant"))), first);
+    }
+
+    #[test]
+    fn talk_to_undefined_npc_is_404_not_panic() {
+        let mut game = game_with_player("alice", "corridor");
+        let corridor = game.world.world.locations.get_mut("corridor").unwrap();
+        corridor.spawns.push(Spawn { npc_type: "phantom".to_string(), count: 1 });
+        let gs = Arc::new(Mutex::new(game));
+        assert!(matches!(run(&gs, "alice", talk("phantom")), Response::Err { code: 404, .. }));
+    }
+
+    #[test]
+    fn inventory_is_a_json_list() {
+        let mut game = game_with_player("alice", "entrance");
+        let inventory = &mut game.players.get_mut("alice").unwrap().inventory;
+        inventory.push("sword".to_string());
+        inventory.push("say \"hi\"".to_string());
+        let gs = Arc::new(Mutex::new(game));
+        let body = ok_body(run(&gs, "alice", Command::Inventory));
+        assert_eq!(body, r#"["sword","say \"hi\""]"#);
+    }
+
+    #[test]
+    fn move_replies_the_room_id() {
+        let gs = Arc::new(Mutex::new(game_with_player("alice", "entrance")));
+        let reply = run(&gs, "alice", Command::Move { direction: "NORTH".to_string() });
+        assert_eq!(ok_body(reply), "room=corridor");
     }
 }
