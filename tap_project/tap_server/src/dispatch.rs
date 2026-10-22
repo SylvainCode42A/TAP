@@ -85,7 +85,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                                             if let Some(from) = from {
                                                 events::moved(&gs, username, &from);
                                             }
-                                            Response::Ok(format!("room=next_is_{}", new_room))
+                                            Response::Ok(format!("room={}", new_room))
                                         }
                                     }
                                 }
@@ -158,7 +158,7 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                     let gs = game_state.lock().unwrap();
                     match gs.players.get(username) {
                         None => Response::Err { code: 404, message: "Player not CONNECTED".to_string() },
-                        Some(player) => Response::Ok(format!("{:?}", player.inventory)),
+                        Some(player) => Response::Ok(serde_json::to_string(&player.inventory).unwrap()),
                     }
                 }
             }
@@ -169,21 +169,24 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                 None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
                 Some(username) => {
                     let mut gs = game_state.lock().unwrap();
-                    match gs.world.world.npcs.get(&npc) {
-                        None => Response::Err { code: 404, message: "NPC_NOT_FOUND".to_string() },
-                        Some(npc_data) => {
-                            let dialogue = npc_data.dialogue.clone();
-                            match gs.players.get_mut(username) {
-                                None => Response::Err { code: 404, message: "Player not CONNECTED".to_string() },
-                                Some(player) => {
-                                    let index = player.talk_progress.entry(npc.clone()).or_insert(0);
-                                    let phrase = dialogue[*index % dialogue.len()].clone();
-                                    *index += 1;
-                                    Response::Ok(phrase)
-                                }
-                            }
-                        }
-                    }
+                    let Some(room) = gs.players.get(username).map(|p| p.current_room.clone()) else {
+                        return Response::Err { code: 404, message: "Player not CONNECTED".to_string() };
+                    };
+                    // RFC 8.2: NPC_NOT_FOUND when the NPC is not in this room.
+                    let Some(npc_id) = combat::find_npc_in_room(&gs, &room, &npc) else {
+                        return combat::npc_not_found();
+                    };
+                    // A spawn naming an NPC missing from world.yaml, or an
+                    // NPC with nothing to say: 404, never a panic.
+                    let dialogue = match gs.world.world.npcs.get(&npc_id) {
+                        Some(npc_data) if !npc_data.dialogue.is_empty() => npc_data.dialogue.clone(),
+                        _ => return combat::npc_not_found(),
+                    };
+                    let player = gs.players.get_mut(username).unwrap();
+                    let index = player.talk_progress.entry(npc_id).or_insert(0);
+                    let phrase = dialogue[*index % dialogue.len()].clone();
+                    *index += 1;
+                    Response::Ok(phrase)
                 }
             }
         },
@@ -280,5 +283,66 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
         },
 
         Command::Quit => Response::Ok("bye".to_string()),
+    }
+}
+
+// MARK: - Tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{game_with_player, ok_body};
+    use crate::Spawn;
+
+    /// Runs `cmd` as `username` on `gs`.
+    fn run(gs: &Arc<Mutex<GameState>>, username: &str, cmd: Command) -> Response {
+        dispatch(cmd, gs, &Some(username.to_string()))
+    }
+
+    fn talk(npc: &str) -> Command {
+        Command::Talk { npc: npc.to_string() }
+    }
+
+    #[test]
+    fn talk_needs_the_npc_in_the_room() {
+        // The merchant waits at the entrance, alice is in the corridor.
+        let gs = Arc::new(Mutex::new(game_with_player("alice", "corridor")));
+        assert!(matches!(run(&gs, "alice", talk("merchant")), Response::Err { code: 404, .. }));
+    }
+
+    #[test]
+    fn talk_takes_id_or_name_and_cycles() {
+        let gs = Arc::new(Mutex::new(game_with_player("alice", "entrance")));
+        let first = ok_body(run(&gs, "alice", talk("merchant")));
+        let second = ok_body(run(&gs, "alice", talk("Merchant")));
+        assert_ne!(first, second);
+        assert_eq!(ok_body(run(&gs, "alice", talk("merchant"))), first);
+    }
+
+    #[test]
+    fn talk_to_undefined_npc_is_404_not_panic() {
+        let mut game = game_with_player("alice", "corridor");
+        let corridor = game.world.world.locations.get_mut("corridor").unwrap();
+        corridor.spawns.push(Spawn { npc_type: "phantom".to_string(), count: 1 });
+        let gs = Arc::new(Mutex::new(game));
+        assert!(matches!(run(&gs, "alice", talk("phantom")), Response::Err { code: 404, .. }));
+    }
+
+    #[test]
+    fn inventory_is_a_json_list() {
+        let mut game = game_with_player("alice", "entrance");
+        let inventory = &mut game.players.get_mut("alice").unwrap().inventory;
+        inventory.push("sword".to_string());
+        inventory.push("say \"hi\"".to_string());
+        let gs = Arc::new(Mutex::new(game));
+        let body = ok_body(run(&gs, "alice", Command::Inventory));
+        assert_eq!(body, r#"["sword","say \"hi\""]"#);
+    }
+
+    #[test]
+    fn move_replies_the_room_id() {
+        let gs = Arc::new(Mutex::new(game_with_player("alice", "entrance")));
+        let reply = run(&gs, "alice", Command::Move { direction: "NORTH".to_string() });
+        assert_eq!(ok_body(reply), "room=corridor");
     }
 }

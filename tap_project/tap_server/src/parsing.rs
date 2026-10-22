@@ -227,7 +227,8 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                                     gs.senders.insert(actions[1].to_string(), cloned);
                                 }
                             }
-                            let message = format!("OK {}\n", msg);
+                            // RFC 4.3: a reply with no data is a bare "OK".
+                            let message = if msg.is_empty() { "OK\n".to_string() } else { format!("OK {}\n", msg) };
                             println!("{}", message.trim());
                             stream.write_all(message.as_bytes()).expect("Failed to send response");
                         }
