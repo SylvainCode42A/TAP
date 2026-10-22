@@ -5,6 +5,9 @@ use crate::{Command, Response, GameState};
 use crate::{dispatch, events};
 use crate::send_error_mess;
 
+/// Longest command line accepted, end of line included, RFC 9.4.
+const MAX_LINE: usize = 1024;
+
 pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
     let mut current_username: Option<String> = None;
     let mut reader = match stream.try_clone() {
@@ -19,6 +22,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
         match reader.read_line(&mut line) {
 
             Ok(0) => break,
+            // RFC 9.4: 1024 bytes per line at most.
+            Ok(n) if n > MAX_LINE => {
+                send_error_mess(stream, "401", "LINE_TOO_LONG");
+            },
             Ok(_) => {
                 let mut matched = false;
                 let mut should_quit = false;

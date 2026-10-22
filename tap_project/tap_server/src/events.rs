@@ -9,6 +9,8 @@
 //!   arrival and departure;
 //! - `EVT GROUP INVITE <leader>` names the leader of the inviting group,
 //!   the name `GROUP JOIN` expects;
+//! - a chat message holding a control character is refused, RFC 9.2: it
+//!   could drive the terminal of the players who receive it;
 //! - a stream that fails to write is skipped: the reading thread of that
 //!   player sees the broken connection and cleans up.
 //!
@@ -93,9 +95,24 @@ pub fn players_count(gs: &GameState) {
 
 // MARK: - CHAT
 
+/// `401 INVALID_MESSAGE` when `message` holds a control character.
+fn check_message(message: &str) -> Result<(), Response> {
+    if message.chars().any(char::is_control) {
+        return Err(Response::Err { code: 401, message: "INVALID_MESSAGE".to_string() });
+    }
+    Ok(())
+}
+
 /// `CHAT GLOBAL <message>`: `EVT GLOBAL CHAT <username> <message>` to
 /// every other connected player. Reply body: empty.
+///
+/// # Errors
+///
+/// - `401 INVALID_MESSAGE`: `message` holds a control character.
 pub fn chat_global(gs: &GameState, username: &str, message: &str) -> Response {
+    if let Err(reply) = check_message(message) {
+        return reply;
+    }
     let others: Vec<String> = gs.senders.keys()
         .filter(|name| *name != username)
         .cloned()
@@ -110,7 +127,11 @@ pub fn chat_global(gs: &GameState, username: &str, message: &str) -> Response {
 /// # Errors
 ///
 /// - `404 Player not CONNECTED`: `username` is not in the game.
+/// - `401 INVALID_MESSAGE`: `message` holds a control character.
 pub fn chat_room(gs: &GameState, username: &str, message: &str) -> Response {
+    if let Err(reply) = check_message(message) {
+        return reply;
+    }
     let Some(player) = gs.players.get(username) else {
         return Response::Err { code: 404, message: "Player not CONNECTED".to_string() };
     };
@@ -126,7 +147,11 @@ pub fn chat_room(gs: &GameState, username: &str, message: &str) -> Response {
 ///
 /// - `401 NOT_IN_GROUP`: `username` is in no group, same code as the
 ///   `GROUP` commands.
+/// - `401 INVALID_MESSAGE`: `message` holds a control character.
 pub fn chat_group(gs: &GameState, username: &str, message: &str) -> Response {
+    if let Err(reply) = check_message(message) {
+        return reply;
+    }
     if group::group_of(gs, username).is_none() {
         return Response::Err { code: 401, message: "NOT_IN_GROUP".to_string() };
     }
@@ -250,6 +275,18 @@ mod tests {
         let inboxes: Vec<Vec<String>> = clients.into_iter().map(inbox).collect();
         assert_eq!(inboxes[0], ["EVT GROUP CHAT bob hi"]);
         assert!(inboxes[2].is_empty());
+    }
+
+    #[test]
+    fn chat_refuses_control_characters_keeps_unicode() {
+        let (gs, clients) = game(&["alice", "bob"]);
+        let escape = "\u{1b}[2Jgotcha";
+        assert!(matches!(chat_global(&gs, "alice", escape), Response::Err { code: 401, .. }));
+        assert!(matches!(chat_room(&gs, "alice", escape), Response::Err { code: 401, .. }));
+        assert!(matches!(chat_global(&gs, "alice", "héllo ✓"), Response::Ok(_)));
+        drop(gs);
+        let inboxes: Vec<Vec<String>> = clients.into_iter().map(inbox).collect();
+        assert_eq!(inboxes[1], ["EVT GLOBAL CHAT alice héllo ✓"]);
     }
 
     #[test]
