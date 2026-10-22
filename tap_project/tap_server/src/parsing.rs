@@ -1,8 +1,10 @@
 use std::net::TcpStream;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use serde_json::json;
 use crate::{Command, Response, GameState};
-use crate::{dispatch, events};
+use crate::{dispatch, events, logging};
 use crate::send_error_mess;
 
 /// Longest command line accepted, end of line included, RFC 9.4.
@@ -14,7 +16,16 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
         Ok(read_half) => BufReader::new(read_half),
         Err(_) => return,
     };
-    stream.write_all("OK hello proto=1\n".as_bytes()).expect("Failed to send hello");
+    let ip = stream.peer_addr().map_or("unknown".to_string(), |peer| peer.to_string());
+    logging::info("connection_open", json!({"ip": ip}));
+    if stream.write_all("OK hello proto=1\n".as_bytes()).is_err() {
+        logging::info("connection_close", json!({"ip": ip, "player": null, "reason": "write_failed"}));
+        return;
+    }
+
+    let mut flood = logging::RateWatch::new(logging::FLOOD_LIMIT, logging::FLOOD_WINDOW);
+    // Why the loop ended, for the log: end of file unless said otherwise.
+    let mut reason = "eof";
 
     loop {
         let mut line = String::new();
@@ -24,9 +35,23 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
             Ok(0) => break,
             // RFC 9.4: 1024 bytes per line at most.
             Ok(n) if n > MAX_LINE => {
+                logging::warn("abuse_oversized_line", json!({
+                    "ip": ip, "player": current_username, "bytes": n,
+                }));
                 send_error_mess(stream, "401", "LINE_TOO_LONG");
             },
             Ok(_) => {
+                logging::info("command", json!({
+                    "ip": ip, "player": current_username, "line": line.trim_end(),
+                }));
+                if flood.hit(Instant::now()) {
+                    logging::warn("abuse_command_flood", json!({
+                        "ip": ip,
+                        "player": current_username,
+                        "limit": logging::FLOOD_LIMIT,
+                        "window_ms": logging::FLOOD_WINDOW.as_millis() as u64,
+                    }));
+                }
                 let mut matched = false;
                 let mut should_quit = false;
                 let mut cmd: Option<Command> = None;
@@ -222,8 +247,13 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             }
                             // RFC 4.3: a reply with no data is a bare "OK".
                             let message = if msg.is_empty() { "OK\n".to_string() } else { format!("OK {}\n", msg) };
-                            println!("{}", message.trim());
-                            stream.write_all(message.as_bytes()).expect("Failed to send response");
+                            logging::info("reply", json!({
+                                "ip": ip, "player": current_username, "reply": message.trim_end(),
+                            }));
+                            if stream.write_all(message.as_bytes()).is_err() {
+                                reason = "write_failed";
+                                break;
+                            }
                         }
                         Response::Err { code, message } => {
                             send_error_mess(stream, &code.to_string(), &message);
@@ -232,12 +262,22 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 }
 
                 if should_quit {
+                    reason = "quit";
                     break;
                 }
             },
 
+            // A client that vanishes resets the connection: an ordinary
+            // departure, not a server error.
+            Err(e) if matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted) => {
+                reason = "reset";
+                break;
+            },
             Err(e) => {
-                println!("ERROR: {}", e);
+                logging::error("read_error", json!({
+                    "ip": ip, "player": current_username, "error": e.to_string(),
+                }));
+                reason = "read_error";
                 break;
             },
         }
@@ -247,4 +287,5 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
     if let Some(username) = &current_username {
         events::disconnect(&mut game_state.lock().unwrap(), username);
     }
+    logging::info("connection_close", json!({"ip": ip, "player": current_username, "reason": reason}));
 }

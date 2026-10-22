@@ -1,10 +1,21 @@
 use std::sync::{Arc, Mutex};
 use crate::{Command, Response, GameState, Player};
-use crate::{combat, events, group, items, quest};
+use crate::{combat, events, group, items, logging, quest};
 use crate::RoomInfo;
 use crate::LookResponse;
 
+/// Runs `cmd` for `current_username` and logs the world change it made,
+/// if any.
 pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: &Option<String>) -> Response {
+    let world_event = logging::world_event(&cmd);
+    let reply = run(cmd, game_state, current_username);
+    if let (Some((event, arg)), Response::Ok(body)) = (world_event, &reply) {
+        logging::world(event, current_username.as_deref(), &arg, body);
+    }
+    reply
+}
+
+fn run(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_username: &Option<String>) -> Response {
     match cmd {
         Command::Connect { username } => {
             let mut gs = game_state.lock().unwrap();
