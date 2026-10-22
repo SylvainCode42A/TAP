@@ -194,11 +194,15 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
         Command::Attack { target } => match current_username {
             None => Response::Err { code: 404, message: "Try with first CONNECTED".to_string() },
             Some(username) => {
-                // A defeat sends the player back to the entrance.
+                // The round is told to the room it was fought in; a defeat
+                // then sends the player back to the entrance.
                 let mut gs = game_state.lock().unwrap();
                 let from = gs.players.get(username).map(|p| p.current_room.clone());
                 let reply = combat::attack(&mut gs, username, &target);
                 if let Some(from) = from {
+                    if let Some(npc_id) = combat::find_npc_in_room(&gs, &from, &target) {
+                        events::combat(&gs, username, &from, &npc_id, &reply);
+                    }
                     events::moved(&gs, username, &from);
                 }
                 reply

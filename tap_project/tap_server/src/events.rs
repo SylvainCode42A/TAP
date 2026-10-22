@@ -1,6 +1,10 @@
 //! Events: the asynchronous `EVT` lines of RFC 6.2, the delivery of
 //! `CHAT`, RFC 5.2.1, and the cleanup of a player who leaves the game.
 //!
+//! One event is ours, not the RFC's: `EVT ROOM COMBAT`, because the
+//! subject asks combat results to reach the players around and the RFC
+//! defines no event for it.
+//!
 //! Rules the RFC leaves open, chosen by the team:
 //!
 //! - an event never goes back to the player who caused it: that player
@@ -180,6 +184,28 @@ pub fn group_leave(gs: &GameState, username: &str, mates: &[String]) {
     send(gs, mates, &format!("GROUP LEAVE {username}"));
 }
 
+// MARK: - COMBAT
+
+/// `EVT ROOM COMBAT <username> <npc-id> damage=<n> target_hp=<n>
+/// status=<status>` to the others in `room`, where the round was fought.
+/// `reply` is the `ATTACK` reply: nothing is sent for an error.
+///
+/// Not an RFC event, see the module header. Its data follows
+/// `EVT STATS players=<n>`: `key=value` pairs, one word each.
+pub fn combat(gs: &GameState, username: &str, room: &str, npc_id: &str, reply: &Response) {
+    let Response::Ok(body) = reply else {
+        return;
+    };
+    let Ok(round) = serde_json::from_str::<serde_json::Value>(body) else {
+        return;
+    };
+    let event = format!(
+        "ROOM COMBAT {username} {npc_id} damage={} target_hp={} status={}",
+        round["damage"], round["target_hp"], round["status"].as_str().unwrap_or("unknown")
+    );
+    send(gs, &in_room(gs, room, username), &event);
+}
+
 // MARK: - Departure
 
 /// Removes `username` from the game, by `QUIT` or a lost connection: it
@@ -300,6 +326,23 @@ mod tests {
         let inboxes: Vec<Vec<String>> = clients.into_iter().map(inbox).collect();
         assert_eq!(inboxes[1], ["EVT ROOM PRESENCE LEAVE alice"]);
         assert_eq!(inboxes[2], ["EVT ROOM PRESENCE ENTER alice"]);
+    }
+
+    #[test]
+    fn combat_round_reaches_the_room() {
+        let (mut gs, clients) = game(&["alice", "bob", "carol"]);
+        for name in ["alice", "bob"] {
+            gs.players.get_mut(name).unwrap().current_room = "monster_room".to_string();
+        }
+        let reply = crate::combat::attack(&mut gs, "alice", "Monster");
+        combat(&gs, "alice", "monster_room", "monster", &reply);
+        let refused = crate::combat::attack(&mut gs, "carol", "monster");
+        combat(&gs, "carol", "entrance", "monster", &refused);
+        drop(gs);
+        let inboxes: Vec<Vec<String>> = clients.into_iter().map(inbox).collect();
+        assert!(inboxes[0].is_empty());
+        assert_eq!(inboxes[1], ["EVT ROOM COMBAT alice monster damage=5 target_hp=15 status=combat"]);
+        assert!(inboxes[2].is_empty());
     }
 
     #[test]
