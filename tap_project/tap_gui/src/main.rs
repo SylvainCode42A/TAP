@@ -8,10 +8,12 @@
 //! - `view`: drawing helpers (room, player, counters, buttons)
 //! - `window`: the window layout, one panel per zone
 //! - `log_panel`: the log, coloured by kind of line
+//! - `map`: the mini-map, built from the exits of each LOOK
 
 mod app;
 mod images;
 mod log_panel;
+mod map;
 mod network;
 mod protocol;
 mod replies;

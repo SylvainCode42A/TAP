@@ -17,6 +17,7 @@ impl TapApp {
                     if self.room.as_ref().map(|r| &r.room.id) != Some(&look.room.id) {
                         self.dialogue = None;
                     }
+                    self.map.update(&look.room.id, &look.room.exits);
                     self.room = Some(look);
                 }
             }

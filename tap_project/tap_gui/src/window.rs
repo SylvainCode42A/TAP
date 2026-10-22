@@ -4,6 +4,7 @@ use eframe::egui;
 
 use crate::app::TapApp;
 use crate::log_panel::show_log;
+use crate::map::show_map;
 use crate::view::{
     push_refresh, show_character, show_counters, show_dialogue, show_group, show_group_name,
     show_inventory, show_room,
@@ -58,7 +59,7 @@ impl eframe::App for TapApp {
             ui.add_space(4.0);
         });
 
-        // Left: the player (health, last attack, quests, group, inventory).
+        // Left: the player (health, last attack, quests, group, map, inventory).
         egui::Panel::left("player")
             .default_size(260.0)
             .show(ui, |ui| {
@@ -70,6 +71,9 @@ impl eframe::App for TapApp {
                     &self.quests,
                 );
                 show_group_name(ui, self.group.as_deref());
+                ui.separator();
+                ui.strong("Map");
+                show_map(ui, &self.map);
                 ui.separator();
                 show_inventory(ui, self.inventory.as_deref(), &mut commands);
             });
