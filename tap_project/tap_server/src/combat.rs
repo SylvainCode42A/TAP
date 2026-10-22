@@ -42,9 +42,7 @@ const DEFAULT_NPC_ATTACK: u32 = 5;
 /// are candidates: an NPC elsewhere in the world is not found.
 ///
 /// Returns the NPC id, or `None` when no NPC of `room` matches.
-pub fn find_npc_in_room(gs: &GameState, room: &str, query: &str)
-    -> Option<String>
-{
+pub fn find_npc_in_room(gs: &GameState, room: &str, query: &str) -> Option<String> {
     let location = gs.world.world.locations.get(room)?;
     let query = query.trim();
 
@@ -84,7 +82,6 @@ pub fn find_npc_in_room(gs: &GameState, room: &str, query: &str)
 /// - `404 NPC_NOT_FOUND`: no NPC of the player's room matches `target`.
 /// - `405 NPC_NOT_HOSTILE`: the NPC exists but is not an enemy.
 pub fn attack(gs: &mut GameState, username: &str, target: &str) -> Response {
-
     // 1. Where is the player?
     let room = match gs.players.get(username) {
         None => return not_connected(),
@@ -109,7 +106,10 @@ pub fn attack(gs: &mut GameState, username: &str, target: &str) -> Response {
         };
     }
     let npc_max_hp = npc.stats.get("hp").copied().unwrap_or(1);
-    let npc_attack = npc.stats.get("attack").copied()
+    let npc_attack = npc
+        .stats
+        .get("attack")
+        .copied()
         .unwrap_or(DEFAULT_NPC_ATTACK);
 
     // 3. The player hits. The sword adds its bonus.
@@ -193,12 +193,18 @@ pub fn status(gs: &GameState, username: &str) -> Response {
 
 /// `404 Player not CONNECTED`, same wording as `dispatch.rs`.
 pub fn not_connected() -> Response {
-    Response::Err { code: 404, message: "Player not CONNECTED".to_string() }
+    Response::Err {
+        code: 404,
+        message: "Player not CONNECTED".to_string(),
+    }
 }
 
 /// `404 NPC_NOT_FOUND`, the RFC 8.2 message for an NPC absent from the room.
 pub fn npc_not_found() -> Response {
-    Response::Err { code: 404, message: "NPC_NOT_FOUND".to_string() }
+    Response::Err {
+        code: 404,
+        message: "NPC_NOT_FOUND".to_string(),
+    }
 }
 
 // MARK: - Tests
@@ -226,8 +232,11 @@ mod tests {
     #[test]
     fn sword_kills_monster_in_two_rounds() {
         let mut gs = game_with_player("alice", "monster_room");
-        gs.players.get_mut("alice").unwrap()
-            .inventory.push("sword".to_string());
+        gs.players
+            .get_mut("alice")
+            .unwrap()
+            .inventory
+            .push("sword".to_string());
 
         let first = ok_body(attack(&mut gs, "alice", "monster"));
         assert!(first.contains("\"target_hp\": 5"));

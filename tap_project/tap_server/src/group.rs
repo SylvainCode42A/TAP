@@ -72,11 +72,14 @@ pub fn create(gs: &mut GameState, username: &str) -> Response {
         suffix += 1;
     }
 
-    gs.groups.insert(id.clone(), Group {
-        leader: username.to_string(),
-        members: vec![username.to_string()],
-        invited: HashSet::new(),
-    });
+    gs.groups.insert(
+        id.clone(),
+        Group {
+            leader: username.to_string(),
+            members: vec![username.to_string()],
+            invited: HashSet::new(),
+        },
+    );
     Response::Ok(format!("group={id}"))
 }
 
@@ -143,7 +146,10 @@ pub fn join(gs: &mut GameState, username: &str, leader: &str) -> Response {
         }
     }
     let Some(id) = target_id else {
-        return Response::Err { code: 403, message: "NOT_INVITED".to_string() };
+        return Response::Err {
+            code: 403,
+            message: "NOT_INVITED".to_string(),
+        };
     };
 
     let group = gs.groups.get_mut(&id).unwrap();
@@ -185,15 +191,24 @@ pub fn leave(gs: &mut GameState, username: &str) -> Response {
 // MARK: - Error replies
 
 fn not_connected() -> Response {
-    Response::Err { code: 404, message: "Player not CONNECTED".to_string() }
+    Response::Err {
+        code: 404,
+        message: "Player not CONNECTED".to_string(),
+    }
 }
 
 fn already_in_group() -> Response {
-    Response::Err { code: 402, message: "ALREADY_IN_GROUP".to_string() }
+    Response::Err {
+        code: 402,
+        message: "ALREADY_IN_GROUP".to_string(),
+    }
 }
 
 fn not_in_group() -> Response {
-    Response::Err { code: 401, message: "NOT_IN_GROUP".to_string() }
+    Response::Err {
+        code: 401,
+        message: "NOT_IN_GROUP".to_string(),
+    }
 }
 
 // MARK: - Tests
@@ -201,8 +216,8 @@ fn not_in_group() -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{game_with_player, ok_body};
     use crate::Player;
+    use crate::test_support::{game_with_player, ok_body};
 
     /// A game with `names` connected, all at the entrance.
     fn game(names: &[&str]) -> GameState {
