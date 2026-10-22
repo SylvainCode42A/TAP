@@ -3,7 +3,7 @@
 
 use eframe::egui;
 
-use crate::images::room_image;
+use crate::images::{icon, room_image};
 use crate::protocol::{AttackResult, Health, Look, QuestInfo};
 
 /// Turns an id into a name for people: `item.loaf_bread` -> `Loaf Bread`.
@@ -22,6 +22,17 @@ fn display_name(id: &str) -> String {
         })
         .collect::<Vec<String>>()
         .join(" ")
+}
+
+/// Draws the small picture of an item or NPC, when our world has one.
+fn show_icon(ui: &mut egui::Ui, id: &str, size: f32) {
+    if let Some(image) = icon(id) {
+        ui.add(
+            egui::Image::new(image)
+                .fit_to_exact_size(egui::vec2(size, size))
+                .corner_radius(4.0),
+        );
+    }
 }
 
 /// Joins a list with commas, or gives `-` when it is empty.
@@ -74,6 +85,7 @@ pub fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
             ui.label("-");
         }
         for item in &look.items {
+            show_icon(ui, item, 32.0);
             let button = ui.button(format!("Take {}", display_name(item)));
             if button.on_hover_text(item).clicked() {
                 commands.push(format!("TAKE {item}"));
@@ -86,6 +98,7 @@ pub fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
     }
     for npc in &look.npcs {
         ui.horizontal(|ui| {
+            show_icon(ui, npc, 48.0);
             ui.label(format!("NPC {}:", display_name(npc)))
                 .on_hover_text(npc);
             for action in ["TALK", "ATTACK", "QUEST"] {
@@ -120,11 +133,14 @@ pub fn show_inventory(ui: &mut egui::Ui, inventory: Option<&[String]>, commands:
         }
         Some(items) => {
             for item in items {
-                let button = ui.button(format!("Drop {}", display_name(item)));
-                if button.on_hover_text(item).clicked() {
-                    commands.push(format!("DROP {item}"));
-                    push_refresh(commands);
-                }
+                ui.horizontal(|ui| {
+                    show_icon(ui, item, 32.0);
+                    let button = ui.button(format!("Drop {}", display_name(item)));
+                    if button.on_hover_text(item).clicked() {
+                        commands.push(format!("DROP {item}"));
+                        push_refresh(commands);
+                    }
+                });
             }
         }
     }
