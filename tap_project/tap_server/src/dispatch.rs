@@ -1,3 +1,14 @@
+//! Command dispatcher: one arm per `Command`, each holding the
+//! `GameState` lock for the whole command.
+//!
+//! CONNECT, LOOK, MOVE, INVENTORY, TALK, WHO and QUIT are handled inline;
+//! the game rules live in `combat`, `quest`, `group` and `items`, the
+//! events in `events`.
+//!
+//! - Owns: the "CONNECT first" check, routing, the events and logs around
+//!   each rule.
+//! - Does NOT own: parsing, writing the reply.
+
 use crate::LookResponse;
 use crate::RoomInfo;
 use crate::{Command, GameState, Player, Response};
@@ -19,6 +30,8 @@ pub fn dispatch(
     reply
 }
 
+/// The dispatch itself, apart from `dispatch` so that the outcome of
+/// every arm is logged in one place.
 fn run(
     cmd: Command,
     game_state: &Arc<Mutex<GameState>>,

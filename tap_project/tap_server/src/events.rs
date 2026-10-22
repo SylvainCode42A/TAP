@@ -288,6 +288,7 @@ mod tests {
         client.lines().map(|line| line.unwrap()).collect()
     }
 
+    /// alice leads, bob joined.
     fn group_of_two(gs: &mut GameState) {
         group::create(gs, "alice");
         group::invite(gs, "alice", "bob");

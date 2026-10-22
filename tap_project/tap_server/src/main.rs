@@ -1,3 +1,10 @@
+//! TAP server: checks `data/world.yaml`, then serves RFC 42TAP on
+//! 127.0.0.1:7878 with one thread per client.
+//!
+//! This file holds the types every module shares: the world as read from
+//! YAML, the live `GameState`, and the `Command` / `Response` pair that
+//! links `parsing.rs` to `dispatch.rs`.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -18,27 +25,39 @@ mod parsing;
 mod quest;
 mod world_check;
 
+/// Room part of a LOOK reply, RFC 5.1.2.
 #[derive(Serialize)]
 pub struct RoomInfo {
+    /// Key of the room in `WorldData::locations`: a `Location` does not
+    /// carry its own id.
     pub id: String,
     pub name: String,
     pub description: String,
     pub exits: HashMap<String, String>,
 }
 
+/// JSON body of a LOOK reply, RFC 5.1.2: field names and order are the
+/// RFC's, clients parse them.
 #[derive(Serialize)]
 pub struct LookResponse {
     pub room: RoomInfo,
+    /// Usernames in the room, the asking player included.
     pub players: Vec<String>,
+    /// Item ids lying in the room.
     pub items: Vec<String>,
+    /// NPC ids spawned in the room.
     pub npcs: Vec<String>,
 }
 
+/// Root of `world.yaml`, whose content sits under one top-level `world:`
+/// key.
 #[derive(Deserialize)]
 pub struct World {
     pub world: WorldData,
 }
 
+/// The world, every table keyed by id: the ids clients send and replies
+/// give back. Read once at startup; only room `items` change afterwards.
 #[derive(Deserialize)]
 pub struct WorldData {
     pub locations: HashMap<String, Location>,
@@ -51,7 +70,10 @@ pub struct WorldData {
 pub struct Location {
     pub name: String,
     pub description: String,
+    /// Direction -> room id. Any word is a direction (`south_alt`), but
+    /// keys must be lowercase: MOVE looks them up lowercased.
     pub exits: HashMap<String, String>,
+    /// Item ids lying here now: TAKE removes them, DROP adds them.
     #[serde(default)]
     pub items: Vec<String>,
     #[serde(default)]
@@ -62,6 +84,7 @@ pub struct Location {
 pub struct Item {
     pub name: String,
     pub description: String,
+    /// False for scenery: LOOK shows it, TAKE refuses it with 403.
     pub obtainable: bool,
 }
 
@@ -69,7 +92,10 @@ pub struct Item {
 pub struct Npc {
     pub name: String,
     pub description: String,
+    /// Lines TALK gives in turn, cycling, counted per player.
     pub dialogue: Vec<String>,
+    /// `hp` (1 when absent) and `attack`, the counter-attack damage (5 when
+    /// absent). Other keys are ignored.
     pub stats: HashMap<String, u32>,
     /// True for enemies: only they accept `ATTACK`. Absent in YAML: false.
     #[serde(default)]
@@ -80,7 +106,11 @@ pub struct Npc {
 pub struct Quest {
     pub name: String,
     pub description: String,
+    /// For the world author only: no command sends it. The server checks
+    /// `requires_item` and `requires_kill`, not this text.
     pub objectives: Vec<String>,
+    /// Text of the `reward` field of the QUEST reply. The actual reward,
+    /// a full heal, is given by `quest.rs` whatever this says.
     pub rewards: Vec<String>,
     /// Id of the NPC that gives and takes back this quest.
     #[serde(default)]
@@ -93,12 +123,24 @@ pub struct Quest {
     pub requires_kill: Option<String>,
 }
 
+/// An NPC placed in a room.
 #[derive(Deserialize, Debug, Serialize)]
 pub struct Spawn {
+    /// NPC id in `WorldData::npcs`.
     pub npc_type: String,
+    /// Read but unused: there is one instance per NPC id, whose health
+    /// every player shares.
     pub count: u32,
 }
 
+/// One client line once parsed, RFC 5: keywords already matched ignoring
+/// case, arguments kept as typed.
+///
+/// - `Take` and `Drop` name an item by id or display name, RFC 8.3;
+///   `Talk` and `Attack` name an NPC the same way.
+/// - Despite their field names, `Quest { quest_id }` holds the NPC asked
+///   (`QUEST <npc>`, RFC 5.4.7) and `GroupJoin { group_id }` the leader's
+///   name (RFC 5.3.3).
 pub enum Command {
     Connect { username: String },
     Look,
@@ -122,6 +164,9 @@ pub enum Command {
     Quit,
 }
 
+/// Outcome of one command. `parsing.rs` writes `Ok(body)` as `OK <body>`,
+/// or a bare `OK` when the body is empty, and `Err` as
+/// `ERR <code> <message>`.
 pub enum Response {
     Ok(String),
     Err { code: u16, message: String },
@@ -129,9 +174,12 @@ pub enum Response {
 
 pub struct Player {
     pub username: String,
+    /// Room id.
     pub current_room: String,
+    /// Item ids, in pickup order.
     pub inventory: Vec<String>,
     pub hp: u32,
+    /// Index of the next TALK line, by NPC id.
     pub talk_progress: HashMap<String, usize>,
     /// NPC id fought in the last round, None outside combat.
     pub in_combat: Option<String>,
@@ -157,18 +205,27 @@ impl Player {
     }
 }
 
+/// Everything that changes while the server runs, shared by every client
+/// thread behind one `Arc<Mutex<_>>`. A command holds the lock from start
+/// to end: commands, and so combat turns, apply one at a time.
 pub struct GameState {
     pub world: World,
+    /// Players in the game by username, from CONNECT to departure.
     pub players: HashMap<String, Player>,
     /// Current hp of each NPC hit at least once, by NPC id. An NPC never
     /// hit has no entry: its hp is still the `hp` stat of world.yaml.
     pub npc_hp: HashMap<String, u32>,
     /// Every group, by group id (`grp.<founder>`).
     pub groups: HashMap<String, group::Group>,
+    /// A clone of each player's socket, by username, to push `EVT` lines.
+    /// Added after a successful CONNECT, removed on departure.
     pub senders: HashMap<String, TcpStream>,
 }
 
 impl World {
+    /// Reads `data/world.yaml` relative to the working directory, so the
+    /// server must start from `tap_server/` (`make run-server` does).
+    /// Panics on a missing or malformed file: no game runs without a world.
     fn load_world() -> World {
         let content = fs::read_to_string("data/world.yaml").expect("Impossible to read world.yaml");
         serde_yaml::from_str(&content).expect("Parsing error")
@@ -256,6 +313,9 @@ fn main() {
     }
 }
 
+/// Writes `ERR <t_error> <error>` to `stream` and logs it as a WARN.
+/// Never fails: a write error means the client left, which its next read
+/// sees.
 pub fn send_error_mess(stream: &mut TcpStream, t_error: &str, error: &str) {
     let message = format!("ERR {} {}\n", t_error, error);
     let ip = stream
