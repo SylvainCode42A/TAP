@@ -16,7 +16,8 @@ pub fn dispatch(cmd: Command, game_state: &Arc<Mutex<GameState>>, current_userna
                 gs.players.insert(username.clone(), player);
                 events::enter(&gs, &username, &room);
                 events::players_count(&gs);
-                Response::Ok(format!("{} connected", username))
+                // RFC 5.1.1: the reply is exactly "OK connected".
+                Response::Ok("connected".to_string())
             }
         },
 
