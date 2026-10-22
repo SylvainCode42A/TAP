@@ -1,10 +1,10 @@
-use std::net::{TcpListener, TcpStream};
-use std::io::Write;
-use std::thread;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
+use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Instant;
 
 use serde_json::json;
@@ -202,13 +202,16 @@ fn main() {
     logging::init(logging::LOG_FILE);
     {
         let data = &game_state.world.world;
-        logging::info("server_start", json!({
-            "address": "127.0.0.1:7878",
-            "rooms": data.locations.len(),
-            "items": data.items.len(),
-            "npcs": data.npcs.len(),
-            "quests": data.quests.len(),
-        }));
+        logging::info(
+            "server_start",
+            json!({
+                "address": "127.0.0.1:7878",
+                "rooms": data.locations.len(),
+                "items": data.items.len(),
+                "npcs": data.npcs.len(),
+                "quests": data.quests.len(),
+            }),
+        );
     }
 
     let game_state = Arc::new(Mutex::new(game_state));
@@ -235,11 +238,14 @@ fn main() {
                 logging::RateWatch::new(logging::RAPID_LIMIT, logging::RAPID_WINDOW)
             });
             if watch.hit(now) {
-                logging::warn("abuse_rapid_connections", json!({
-                    "ip": peer.ip().to_string(),
-                    "limit": logging::RAPID_LIMIT,
-                    "window_s": logging::RAPID_WINDOW.as_secs(),
-                }));
+                logging::warn(
+                    "abuse_rapid_connections",
+                    json!({
+                        "ip": peer.ip().to_string(),
+                        "limit": logging::RAPID_LIMIT,
+                        "window_s": logging::RAPID_WINDOW.as_secs(),
+                    }),
+                );
             }
         }
         let game_state_clone = Arc::clone(&game_state);
@@ -252,7 +258,9 @@ fn main() {
 
 pub fn send_error_mess(stream: &mut TcpStream, t_error: &str, error: &str) {
     let message = format!("ERR {} {}\n", t_error, error);
-    let ip = stream.peer_addr().map_or("unknown".to_string(), |peer| peer.to_string());
+    let ip = stream
+        .peer_addr()
+        .map_or("unknown".to_string(), |peer| peer.to_string());
     logging::warn("reply", json!({"ip": ip, "reply": message.trim_end()}));
     // A lost client is seen by its next read, which ends the session.
     let _ = stream.write_all(message.as_bytes());

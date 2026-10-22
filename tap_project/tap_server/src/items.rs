@@ -53,10 +53,22 @@ pub fn take_item(gs: &mut GameState, username: &str, query: &str) -> Response {
         return not_connected();
     };
     let Some(id) = find_item(gs, &room.items, query) else {
-        return Response::Err { code: 404, message: "ITEM_NOT_FOUND".to_string() };
+        return Response::Err {
+            code: 404,
+            message: "ITEM_NOT_FOUND".to_string(),
+        };
     };
-    if gs.world.world.items.get(&id).is_some_and(|item| !item.obtainable) {
-        return Response::Err { code: 403, message: "ITEM_NOT_OBTAINABLE".to_string() };
+    if gs
+        .world
+        .world
+        .items
+        .get(&id)
+        .is_some_and(|item| !item.obtainable)
+    {
+        return Response::Err {
+            code: 403,
+            message: "ITEM_NOT_OBTAINABLE".to_string(),
+        };
     }
 
     if let Some(room) = gs.world.world.locations.get_mut(&room_id) {
@@ -83,7 +95,10 @@ pub fn drop_item(gs: &mut GameState, username: &str, query: &str) -> Response {
     };
     let room_id = player.current_room.clone();
     let Some(id) = find_item(gs, &player.inventory, query) else {
-        return Response::Err { code: 404, message: "ITEM_NOT_IN_INVENTORY".to_string() };
+        return Response::Err {
+            code: 404,
+            message: "ITEM_NOT_IN_INVENTORY".to_string(),
+        };
     };
 
     if let Some(player) = gs.players.get_mut(username) {
@@ -98,7 +113,10 @@ pub fn drop_item(gs: &mut GameState, username: &str, query: &str) -> Response {
 // MARK: - Error replies
 
 fn not_connected() -> Response {
-    Response::Err { code: 404, message: "Player not CONNECTED".to_string() }
+    Response::Err {
+        code: 404,
+        message: "Player not CONNECTED".to_string(),
+    }
 }
 
 // MARK: - Tests
@@ -117,7 +135,10 @@ mod tests {
 
     /// Room holding the item `id` in the real world.yaml.
     fn room_of(gs: &GameState, id: &str) -> String {
-        gs.world.world.locations.iter()
+        gs.world
+            .world
+            .locations
+            .iter()
             .find(|(_, room)| room.items.iter().any(|item| item == id))
             .map(|(room_id, _)| room_id.clone())
             .unwrap()
@@ -129,9 +150,16 @@ mod tests {
         let room = room_of(&gs, "cell_key");
         gs.players.get_mut("alice").unwrap().current_room = room.clone();
 
-        assert_eq!(ok_body(take_item(&mut gs, "alice", " cell KEY ")), "taken=cell_key");
+        assert_eq!(
+            ok_body(take_item(&mut gs, "alice", " cell KEY ")),
+            "taken=cell_key"
+        );
         assert_eq!(gs.players["alice"].inventory, ["cell_key"]);
-        assert!(!gs.world.world.locations[&room].items.contains(&"cell_key".to_string()));
+        assert!(
+            !gs.world.world.locations[&room]
+                .items
+                .contains(&"cell_key".to_string())
+        );
         assert_eq!(code(take_item(&mut gs, "alice", "Cell Key")), 404);
     }
 
@@ -142,17 +170,28 @@ mod tests {
         gs.players.get_mut("alice").unwrap().current_room = room.clone();
 
         assert_eq!(code(take_item(&mut gs, "alice", "Torch")), 403);
-        assert!(gs.world.world.locations[&room].items.contains(&"torch".to_string()));
+        assert!(
+            gs.world.world.locations[&room]
+                .items
+                .contains(&"torch".to_string())
+        );
         assert!(gs.players["alice"].inventory.is_empty());
     }
 
     #[test]
     fn drop_by_name_puts_the_item_back_for_others() {
         let mut gs = game_with_player("alice", "corridor");
-        gs.players.get_mut("alice").unwrap().inventory.push("sword".to_string());
+        gs.players
+            .get_mut("alice")
+            .unwrap()
+            .inventory
+            .push("sword".to_string());
 
         assert_eq!(code(drop_item(&mut gs, "alice", "Treasure")), 404);
-        assert_eq!(ok_body(drop_item(&mut gs, "alice", "sword")), "dropped=sword");
+        assert_eq!(
+            ok_body(drop_item(&mut gs, "alice", "sword")),
+            "dropped=sword"
+        );
         assert!(gs.players["alice"].inventory.is_empty());
 
         let mut bob = crate::Player::new("bob");

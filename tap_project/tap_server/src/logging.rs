@@ -67,7 +67,8 @@ impl Level {
 /// Starts the writer thread: each line goes to the console and to `path`.
 /// Without a usable file, the console alone is kept and a `WARN` says so.
 pub fn init(path: &str) {
-    let file = Path::new(path).parent()
+    let file = Path::new(path)
+        .parent()
         .map_or(Ok(()), fs::create_dir_all)
         .and_then(|()| OpenOptions::new().create(true).append(true).open(path));
     let (mut sink, failure) = match file {
@@ -86,7 +87,11 @@ pub fn init(path: &str) {
     let _ = SINK.set(sender);
 
     if let Some(error) = failure {
-        log(Level::Warn, "log_file_unavailable", json!({"path": path, "error": error.to_string()}));
+        log(
+            Level::Warn,
+            "log_file_unavailable",
+            json!({"path": path, "error": error.to_string()}),
+        );
     }
 }
 
@@ -138,12 +143,16 @@ fn iso_utc(since: Duration) -> String {
     let z = (secs / 86_400) as i64 + 719_468;
     let era = z.div_euclid(146_097);
     let day_of_era = z.rem_euclid(146_097);
-    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524
-        - day_of_era / 146_096) / 365;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_from_march = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
-    let month = if month_from_march < 10 { month_from_march + 3 } else { month_from_march - 9 };
+    let month = if month_from_march < 10 {
+        month_from_march + 3
+    } else {
+        month_from_march - 9
+    };
     let year = year_of_era + era * 400 + i64::from(month <= 2);
 
     format!(
@@ -172,8 +181,12 @@ pub fn world_event(cmd: &Command) -> Option<(&'static str, String)> {
         Command::ChatGlobal { message } => ("chat_global", message.clone()),
         Command::ChatRoom { message } => ("chat_room", message.clone()),
         Command::ChatGroup { message } => ("chat_group", message.clone()),
-        Command::Look | Command::Inventory | Command::Status | Command::Quests
-        | Command::Who | Command::Quit => return None,
+        Command::Look
+        | Command::Inventory
+        | Command::Status
+        | Command::Quests
+        | Command::Who
+        | Command::Quit => return None,
     };
     Some(event)
 }
@@ -188,7 +201,10 @@ pub fn world(event: &str, player: Option<&str>, arg: &str, body: &str) {
     } else {
         event
     };
-    info(event, json!({"player": player, "arg": arg, "result": result}));
+    info(
+        event,
+        json!({"player": player, "arg": arg, "result": result}),
+    );
 }
 
 // MARK: - Abuse
@@ -203,13 +219,22 @@ pub struct RateWatch {
 
 impl RateWatch {
     pub fn new(limit: usize, window: Duration) -> RateWatch {
-        RateWatch { window, limit, hits: VecDeque::new(), reported: false }
+        RateWatch {
+            window,
+            limit,
+            hits: VecDeque::new(),
+            reported: false,
+        }
     }
 
     /// Records one hit at `now`. True once per burst, on the hit that goes
     /// over the limit: a flood is logged once, not once per command.
     pub fn hit(&mut self, now: Instant) -> bool {
-        while self.hits.front().is_some_and(|&first| now.duration_since(first) > self.window) {
+        while self
+            .hits
+            .front()
+            .is_some_and(|&first| now.duration_since(first) > self.window)
+        {
             self.hits.pop_front();
         }
         self.hits.push_back(now);
@@ -222,7 +247,9 @@ impl RateWatch {
 
     /// True when no hit is left in the window, so the watch can be dropped.
     pub fn is_idle(&self, now: Instant) -> bool {
-        self.hits.back().is_none_or(|&last| now.duration_since(last) > self.window)
+        self.hits
+            .back()
+            .is_none_or(|&last| now.duration_since(last) > self.window)
     }
 }
 
@@ -235,7 +262,10 @@ mod tests {
     #[test]
     fn iso_utc_known_dates() {
         assert_eq!(iso_utc(Duration::ZERO), "1970-01-01T00:00:00.000Z");
-        assert_eq!(iso_utc(Duration::from_secs(951_782_400)), "2000-02-29T00:00:00.000Z");
+        assert_eq!(
+            iso_utc(Duration::from_secs(951_782_400)),
+            "2000-02-29T00:00:00.000Z"
+        );
         assert_eq!(
             iso_utc(Duration::from_millis(1_792_679_000_512)),
             "2026-10-22T14:23:20.512Z"
@@ -245,10 +275,15 @@ mod tests {
     #[test]
     fn render_puts_fixed_keys_first_and_stays_json() {
         let at = UNIX_EPOCH + Duration::from_millis(1_792_679_000_512);
-        let line = render(Level::Warn, "reply", &json!({"reply": "ERR 401 \"x\"", "ip": "1.2.3.4"}), at);
-        assert!(line.starts_with(
-            r#"{"ts":"2026-10-22T14:23:20.512Z","level":"WARN","event":"reply","#
-        ));
+        let line = render(
+            Level::Warn,
+            "reply",
+            &json!({"reply": "ERR 401 \"x\"", "ip": "1.2.3.4"}),
+            at,
+        );
+        assert!(
+            line.starts_with(r#"{"ts":"2026-10-22T14:23:20.512Z","level":"WARN","event":"reply","#)
+        );
         let parsed: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(parsed["reply"], "ERR 401 \"x\"");
 
@@ -260,20 +295,29 @@ mod tests {
     fn rate_watch_reports_once_per_burst() {
         let start = Instant::now();
         let mut watch = RateWatch::new(3, Duration::from_secs(1));
-        let reports: Vec<bool> = (0..6).map(|i| watch.hit(start + Duration::from_millis(i * 10))).collect();
+        let reports: Vec<bool> = (0..6)
+            .map(|i| watch.hit(start + Duration::from_millis(i * 10)))
+            .collect();
         assert_eq!(reports, [false, false, false, true, false, false]);
 
         // Quiet for longer than the window: a new burst is reported again.
         let later = start + Duration::from_secs(3);
         assert!(watch.is_idle(later));
-        let again: Vec<bool> = (0..4).map(|i| watch.hit(later + Duration::from_millis(i))).collect();
+        let again: Vec<bool> = (0..4)
+            .map(|i| watch.hit(later + Duration::from_millis(i)))
+            .collect();
         assert_eq!(again, [false, false, false, true]);
     }
 
     #[test]
     fn read_only_commands_make_no_world_event() {
         assert!(world_event(&Command::Look).is_none());
-        let take = Command::Take { item: "Cell Key".to_string() };
-        assert_eq!(world_event(&take), Some(("item_taken", "Cell Key".to_string())));
+        let take = Command::Take {
+            item: "Cell Key".to_string(),
+        };
+        assert_eq!(
+            world_event(&take),
+            Some(("item_taken", "Cell Key".to_string()))
+        );
     }
 }

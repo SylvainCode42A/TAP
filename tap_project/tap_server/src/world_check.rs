@@ -13,8 +13,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::combat::RESPAWN_ROOM;
 use crate::World;
+use crate::combat::RESPAWN_ROOM;
 
 // MARK: - Subject minimums
 
@@ -117,9 +117,7 @@ fn check_rooms(world: &World, errors: &mut Vec<String>) {
         }
         for spawn in &room.spawns {
             if !data.npcs.contains_key(&spawn.npc_type) {
-                errors.push(format!(
-                    "room {room_id}: unknown npc {}", spawn.npc_type
-                ));
+                errors.push(format!("room {room_id}: unknown npc {}", spawn.npc_type));
             }
         }
     }
@@ -142,12 +140,11 @@ fn check_npcs_and_quests(world: &World, errors: &mut Vec<String>) {
 
     for (quest_id, quest) in &data.quests {
         if !data.npcs.contains_key(&quest.giver) {
-            errors.push(format!(
-                "quest {quest_id}: unknown giver '{}'", quest.giver
-            ));
+            errors.push(format!("quest {quest_id}: unknown giver '{}'", quest.giver));
         } else if !spawned.contains(&quest.giver) {
             errors.push(format!(
-                "quest {quest_id}: giver {} is in no room", quest.giver
+                "quest {quest_id}: giver {} is in no room",
+                quest.giver
             ));
         }
         if let Some(item) = &quest.requires_item
@@ -157,9 +154,7 @@ fn check_npcs_and_quests(world: &World, errors: &mut Vec<String>) {
         }
         if let Some(npc_id) = &quest.requires_kill {
             match data.npcs.get(npc_id) {
-                None => errors.push(format!(
-                    "quest {quest_id}: unknown enemy {npc_id}"
-                )),
+                None => errors.push(format!("quest {quest_id}: unknown enemy {npc_id}")),
                 Some(npc) if !npc.hostile => errors.push(format!(
                     "quest {quest_id}: {npc_id} is not hostile, \
                      it can never be beaten"
@@ -215,9 +210,7 @@ fn check_map_shape(world: &World, errors: &mut Vec<String>) {
         let seen = walk(&exits_to, start_id);
         for room_id in rooms.keys() {
             if !seen.contains(room_id) {
-                errors.push(format!(
-                    "room {room_id}: unreachable from {RESPAWN_ROOM}"
-                ));
+                errors.push(format!("room {room_id}: unreachable from {RESPAWN_ROOM}"));
             }
         }
     }
@@ -247,7 +240,8 @@ fn check_map_shape(world: &World, errors: &mut Vec<String>) {
         errors.push(format!(
             "map: no loop ({} rooms, {} links, no group of rooms has as \
              many links as rooms)",
-            rooms.len(), total_links
+            rooms.len(),
+            total_links
         ));
     }
 
@@ -306,7 +300,11 @@ fn check_minimums(world: &World, errors: &mut Vec<String>) {
     let counts = [
         ("rooms", data.locations.len(), MIN_ROOMS),
         ("items", data.items.len(), MIN_ITEMS),
-        ("obtainable items", obtainable_in_rooms.len(), MIN_OBTAINABLE),
+        (
+            "obtainable items",
+            obtainable_in_rooms.len(),
+            MIN_OBTAINABLE,
+        ),
         ("npcs", data.npcs.len(), MIN_NPCS),
         ("hostile npcs", hostile, 1),
         ("quests", data.quests.len(), MIN_QUESTS),
@@ -354,7 +352,8 @@ mod tests {
     fn exit_without_way_back() {
         let mut w = world();
         let cell = w.world.locations.get_mut("secret_cell").unwrap();
-        cell.exits.insert("east".to_string(), "treasure".to_string());
+        cell.exits
+            .insert("east".to_string(), "treasure".to_string());
         assert!(reports(&w, "secret_cell.east -> treasure: no exit back"));
     }
 
@@ -363,7 +362,10 @@ mod tests {
         let mut w = world();
         let library = w.world.locations.get_mut("library").unwrap();
         library.items.push("grail".to_string());
-        library.spawns.push(Spawn { npc_type: "ghost".to_string(), count: 1 });
+        library.spawns.push(Spawn {
+            npc_type: "ghost".to_string(),
+            count: 1,
+        });
         assert!(reports(&w, "room library: unknown item grail"));
         assert!(reports(&w, "room library: unknown npc ghost"));
     }
@@ -414,9 +416,12 @@ mod tests {
     fn map_without_branch() {
         let mut w = world();
         let cell = w.world.locations.get_mut("secret_cell").unwrap();
-        cell.exits.insert("east".to_string(), "treasure".to_string());
+        cell.exits
+            .insert("east".to_string(), "treasure".to_string());
         let treasure = w.world.locations.get_mut("treasure").unwrap();
-        treasure.exits.insert("south".to_string(), "secret_cell".to_string());
+        treasure
+            .exits
+            .insert("south".to_string(), "secret_cell".to_string());
         assert!(reports(&w, "map: no optional branch"));
     }
 
@@ -426,7 +431,8 @@ mod tests {
     fn one_way_exit_is_not_a_dead_end() {
         let mut w = world();
         let cell = w.world.locations.get_mut("secret_cell").unwrap();
-        cell.exits.insert("east".to_string(), "treasure".to_string());
+        cell.exits
+            .insert("east".to_string(), "treasure".to_string());
         assert!(reports(&w, "map: no optional branch"));
     }
 
@@ -466,8 +472,14 @@ mod tests {
     /// must never panic, and every break must be reported.
     fn random_breakage(seed: u64, rounds: usize) {
         let rooms = [
-            "entrance", "corridor", "guard_room", "library",
-            "armory", "monster_room", "treasure", "secret_cell",
+            "entrance",
+            "corridor",
+            "guard_room",
+            "library",
+            "armory",
+            "monster_room",
+            "treasure",
+            "secret_cell",
         ];
         let mut seed = seed;
         for _ in 0..rounds {

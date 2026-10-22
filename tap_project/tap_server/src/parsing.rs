@@ -1,11 +1,11 @@
-use std::net::TcpStream;
+use crate::send_error_mess;
+use crate::{Command, GameState, Response};
+use crate::{dispatch, events, logging};
+use serde_json::json;
 use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use serde_json::json;
-use crate::{Command, Response, GameState};
-use crate::{dispatch, events, logging};
-use crate::send_error_mess;
 
 /// Longest command line accepted, end of line included, RFC 9.4.
 const MAX_LINE: usize = 1024;
@@ -16,10 +16,15 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
         Ok(read_half) => BufReader::new(read_half),
         Err(_) => return,
     };
-    let ip = stream.peer_addr().map_or("unknown".to_string(), |peer| peer.to_string());
+    let ip = stream
+        .peer_addr()
+        .map_or("unknown".to_string(), |peer| peer.to_string());
     logging::info("connection_open", json!({"ip": ip}));
     if stream.write_all("OK hello proto=1\n".as_bytes()).is_err() {
-        logging::info("connection_close", json!({"ip": ip, "player": null, "reason": "write_failed"}));
+        logging::info(
+            "connection_close",
+            json!({"ip": ip, "player": null, "reason": "write_failed"}),
+        );
         return;
     }
 
@@ -31,26 +36,34 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
         let mut line = String::new();
 
         match reader.read_line(&mut line) {
-
             Ok(0) => break,
             // RFC 9.4: 1024 bytes per line at most.
             Ok(n) if n > MAX_LINE => {
-                logging::warn("abuse_oversized_line", json!({
-                    "ip": ip, "player": current_username, "bytes": n,
-                }));
+                logging::warn(
+                    "abuse_oversized_line",
+                    json!({
+                        "ip": ip, "player": current_username, "bytes": n,
+                    }),
+                );
                 send_error_mess(stream, "401", "LINE_TOO_LONG");
-            },
+            }
             Ok(_) => {
-                logging::info("command", json!({
-                    "ip": ip, "player": current_username, "line": line.trim_end(),
-                }));
+                logging::info(
+                    "command",
+                    json!({
+                        "ip": ip, "player": current_username, "line": line.trim_end(),
+                    }),
+                );
                 if flood.hit(Instant::now()) {
-                    logging::warn("abuse_command_flood", json!({
-                        "ip": ip,
-                        "player": current_username,
-                        "limit": logging::FLOOD_LIMIT,
-                        "window_ms": logging::FLOOD_WINDOW.as_millis() as u64,
-                    }));
+                    logging::warn(
+                        "abuse_command_flood",
+                        json!({
+                            "ip": ip,
+                            "player": current_username,
+                            "limit": logging::FLOOD_LIMIT,
+                            "window_ms": logging::FLOOD_WINDOW.as_millis() as u64,
+                        }),
+                    );
                 }
                 let mut matched = false;
                 let mut should_quit = false;
@@ -60,9 +73,15 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 if actions.first().map(|s| s.to_uppercase()) == Some("CONNECT".to_string()) {
                     matched = true;
                     if let Some(current) = &current_username {
-                        send_error_mess(stream, "401", &format!("{} already connected, use QUIT first", current));
+                        send_error_mess(
+                            stream,
+                            "401",
+                            &format!("{} already connected, use QUIT first", current),
+                        );
                     } else if actions.len() == 2 {
-                        cmd = Some(Command::Connect { username: actions[1].to_string() });
+                        cmd = Some(Command::Connect {
+                            username: actions[1].to_string(),
+                        });
                     } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CONNECT");
                     }
@@ -78,9 +97,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     // Any word: dispatch checks it against the exits of the
                     // room, which world.yaml may name freely (south_alt).
                     if actions.len() == 2 {
-                        cmd = Some(Command::Move { direction: actions[1].to_string() });
-                    }
-                    else {
+                        cmd = Some(Command::Move {
+                            direction: actions[1].to_string(),
+                        });
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for MOVE");
                     }
                 }
@@ -89,9 +109,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
-                        cmd = Some(Command::Take { item: item.to_string() });
-                    }
-                    else {
+                        cmd = Some(Command::Take {
+                            item: item.to_string(),
+                        });
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for TAKE");
                     }
                 }
@@ -100,9 +121,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
-                        cmd = Some(Command::Drop { item: item.to_string() });
-                    }
-                    else {
+                        cmd = Some(Command::Drop {
+                            item: item.to_string(),
+                        });
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for DROP");
                     }
                 }
@@ -116,9 +138,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
-                        cmd = Some(Command::Talk { npc: item.to_string() });
-                    }
-                    else {
+                        cmd = Some(Command::Talk {
+                            npc: item.to_string(),
+                        });
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for TALK");
                     }
                 }
@@ -127,9 +150,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
-                        cmd = Some(Command::Attack { target: item.to_string() });
-                    }
-                    else {
+                        cmd = Some(Command::Attack {
+                            target: item.to_string(),
+                        });
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for ATTACK");
                     }
                 }
@@ -143,9 +167,10 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     matched = true;
                     if actions.len() >= 2 {
                         let item = actions[1..].join(" ");
-                        cmd = Some(Command::Quest { quest_id: item.to_string() });
-                    }
-                    else {
+                        cmd = Some(Command::Quest {
+                            quest_id: item.to_string(),
+                        });
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for QUEST");
                     }
                 }
@@ -160,23 +185,37 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     cmd = Some(Command::Who);
                 }
 
-                if actions.first().map(|s| s.to_uppercase()) == Some("GROUP".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("INVITE".to_string()) {
+                if actions.first().map(|s| s.to_uppercase()) == Some("GROUP".to_string())
+                    && actions.get(1).map(|s| s.to_uppercase()) == Some("INVITE".to_string())
+                {
                     matched = true;
                     if actions.len() == 3 {
-                        cmd = Some(Command::GroupInvite { username: actions[2].to_string() });
-                    }
-                    else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for GROUP INVITE");
+                        cmd = Some(Command::GroupInvite {
+                            username: actions[2].to_string(),
+                        });
+                    } else {
+                        send_error_mess(
+                            stream,
+                            "401",
+                            "Invalid number of arguments for GROUP INVITE",
+                        );
                     }
                 }
 
-                if actions.first().map(|s| s.to_uppercase()) == Some("GROUP".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("JOIN".to_string()) {
+                if actions.first().map(|s| s.to_uppercase()) == Some("GROUP".to_string())
+                    && actions.get(1).map(|s| s.to_uppercase()) == Some("JOIN".to_string())
+                {
                     matched = true;
                     if actions.len() == 3 {
-                        cmd = Some(Command::GroupJoin { group_id: actions[2].to_string() });
-                    }
-                    else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for GROUP JOIN");
+                        cmd = Some(Command::GroupJoin {
+                            group_id: actions[2].to_string(),
+                        });
+                    } else {
+                        send_error_mess(
+                            stream,
+                            "401",
+                            "Invalid number of arguments for GROUP JOIN",
+                        );
                     }
                 }
 
@@ -190,36 +229,53 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     cmd = Some(Command::GroupLeave);
                 }
 
-                if actions.first().map(|s| s.to_uppercase()) == Some("CHAT".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("GLOBAL".to_string()) {
+                if actions.first().map(|s| s.to_uppercase()) == Some("CHAT".to_string())
+                    && actions.get(1).map(|s| s.to_uppercase()) == Some("GLOBAL".to_string())
+                {
                     matched = true;
                     if actions.len() > 2 {
                         let rest = actions[2..].join(" ");
-                        cmd = Some(Command::ChatGlobal { message: rest.to_string() });
-                    }
-                    else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for CHAT GLOBAL");
+                        cmd = Some(Command::ChatGlobal {
+                            message: rest.to_string(),
+                        });
+                    } else {
+                        send_error_mess(
+                            stream,
+                            "401",
+                            "Invalid number of arguments for CHAT GLOBAL",
+                        );
                     }
                 }
 
-                if actions.first().map(|s| s.to_uppercase()) == Some("CHAT".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("ROOM".to_string()) {
+                if actions.first().map(|s| s.to_uppercase()) == Some("CHAT".to_string())
+                    && actions.get(1).map(|s| s.to_uppercase()) == Some("ROOM".to_string())
+                {
                     matched = true;
                     if actions.len() > 2 {
                         let rest = actions[2..].join(" ");
-                        cmd = Some(Command::ChatRoom { message: rest.to_string() });
-                    }
-                    else {
+                        cmd = Some(Command::ChatRoom {
+                            message: rest.to_string(),
+                        });
+                    } else {
                         send_error_mess(stream, "401", "Invalid number of arguments for CHAT ROOM");
                     }
                 }
 
-                if actions.first().map(|s| s.to_uppercase()) == Some("CHAT".to_string()) && actions.get(1).map(|s| s.to_uppercase()) == Some("GROUP".to_string()) {
+                if actions.first().map(|s| s.to_uppercase()) == Some("CHAT".to_string())
+                    && actions.get(1).map(|s| s.to_uppercase()) == Some("GROUP".to_string())
+                {
                     matched = true;
                     if actions.len() > 2 {
                         let rest = actions[2..].join(" ");
-                        cmd = Some(Command::ChatGroup { message: rest.to_string() });
-                    }
-                    else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for CHAT GROUP");
+                        cmd = Some(Command::ChatGroup {
+                            message: rest.to_string(),
+                        });
+                    } else {
+                        send_error_mess(
+                            stream,
+                            "401",
+                            "Invalid number of arguments for CHAT GROUP",
+                        );
                     }
                 }
 
@@ -246,10 +302,17 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                                 }
                             }
                             // RFC 4.3: a reply with no data is a bare "OK".
-                            let message = if msg.is_empty() { "OK\n".to_string() } else { format!("OK {}\n", msg) };
-                            logging::info("reply", json!({
-                                "ip": ip, "player": current_username, "reply": message.trim_end(),
-                            }));
+                            let message = if msg.is_empty() {
+                                "OK\n".to_string()
+                            } else {
+                                format!("OK {}\n", msg)
+                            };
+                            logging::info(
+                                "reply",
+                                json!({
+                                    "ip": ip, "player": current_username, "reply": message.trim_end(),
+                                }),
+                            );
                             if stream.write_all(message.as_bytes()).is_err() {
                                 reason = "write_failed";
                                 break;
@@ -265,21 +328,29 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     reason = "quit";
                     break;
                 }
-            },
+            }
 
             // A client that vanishes resets the connection: an ordinary
             // departure, not a server error.
-            Err(e) if matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted) => {
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
+                ) =>
+            {
                 reason = "reset";
                 break;
-            },
+            }
             Err(e) => {
-                logging::error("read_error", json!({
-                    "ip": ip, "player": current_username, "error": e.to_string(),
-                }));
+                logging::error(
+                    "read_error",
+                    json!({
+                        "ip": ip, "player": current_username, "error": e.to_string(),
+                    }),
+                );
                 reason = "read_error";
                 break;
-            },
+            }
         }
     }
 
@@ -287,5 +358,8 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
     if let Some(username) = &current_username {
         events::disconnect(&mut game_state.lock().unwrap(), username);
     }
-    logging::info("connection_close", json!({"ip": ip, "player": current_username, "reason": reason}));
+    logging::info(
+        "connection_close",
+        json!({"ip": ip, "player": current_username, "reason": reason}),
+    );
 }

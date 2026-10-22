@@ -112,9 +112,7 @@ fn quest_json(id: &str, quest: &Quest, status: &str) -> String {
 /// - `404 NPC_NOT_FOUND`: no NPC of the player's room matches `npc_query`.
 /// - `406 NO_QUEST_AVAILABLE`: every quest of this NPC is completed, or it
 ///   gives none.
-pub fn quest(gs: &mut GameState, username: &str, npc_query: &str)
-    -> Response
-{
+pub fn quest(gs: &mut GameState, username: &str, npc_query: &str) -> Response {
     // 1. Where is the player, and is the NPC in that room?
     let room = match gs.players.get(username) {
         None => return combat::not_connected(),
@@ -164,7 +162,10 @@ pub fn quest(gs: &mut GameState, username: &str, npc_query: &str)
     }
 
     // 5. Nothing left from this NPC.
-    Response::Err { code: 406, message: "NO_QUEST_AVAILABLE".to_string() }
+    Response::Err {
+        code: 406,
+        message: "NO_QUEST_AVAILABLE".to_string(),
+    }
 }
 
 // MARK: - QUESTS
@@ -201,7 +202,9 @@ pub fn quests(gs: &GameState, username: &str) -> Response {
                 format!(
                     "{{\"quest_id\": {}, \"status\": \"active\", \
                      \"progress\": \"{}/{}\"}}",
-                    json_string(id), done, needed
+                    json_string(id),
+                    done,
+                    needed
                 )
             }
             QuestStatus::Completed => format!(
@@ -243,8 +246,11 @@ mod tests {
         assert!(listed.contains("\"progress\": \"0/1\""));
 
         // With the key: completed, then nothing left.
-        gs.players.get_mut("alice").unwrap()
-            .inventory.push("cell_key".to_string());
+        gs.players
+            .get_mut("alice")
+            .unwrap()
+            .inventory
+            .push("cell_key".to_string());
         let done = ok_body(quest(&mut gs, "alice", "prisoner"));
         assert!(done.contains("\"status\": \"completed\""));
         let again = quest(&mut gs, "alice", "prisoner");
@@ -258,13 +264,19 @@ mod tests {
         let mut gs = game_with_player("alice", "entrance");
         quest(&mut gs, "alice", "merchant");
 
-        gs.players.get_mut("alice").unwrap()
-            .kills.push("monster".to_string());
+        gs.players
+            .get_mut("alice")
+            .unwrap()
+            .kills
+            .push("monster".to_string());
         let listed = ok_body(quests(&gs, "alice"));
         assert!(listed.contains("\"progress\": \"1/2\""));
 
-        gs.players.get_mut("alice").unwrap()
-            .inventory.push("treasure".to_string());
+        gs.players
+            .get_mut("alice")
+            .unwrap()
+            .inventory
+            .push("treasure".to_string());
         let done = ok_body(quest(&mut gs, "alice", "merchant"));
         assert!(done.contains("\"status\": \"completed\""));
     }
