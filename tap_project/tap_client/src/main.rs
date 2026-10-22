@@ -1,3 +1,11 @@
+//! TAP CLI client: lines typed on stdin go to the server as is, and every
+//! server line is printed as it arrives.
+//!
+//! Commands are raw protocol (`MOVE north`, `CHAT ROOM hi`), with no
+//! translation layer, so the client works with any RFC 42TAP server. A
+//! reader thread prints server lines, so events show up while the user
+//! is typing.
+
 use std::env;
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{Shutdown, TcpStream};
