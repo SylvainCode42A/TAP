@@ -3,12 +3,20 @@
 //! - `network`: connection thread, lines from the server to the window
 //! - `protocol`: reading the server replies (RFC 42TAP)
 //! - `app`: window state, commands sent and replies received
-//! - `view`: drawing the window
+//! - `replies`: what each server reply changes in the window
+//! - `images`: pictures of the rooms, built into the program
+//! - `view`: drawing helpers (room, player, counters, buttons)
+//! - `window`: the window layout, one panel per zone
+//! - `log_panel`: the log, coloured by kind of line
 
 mod app;
+mod images;
+mod log_panel;
 mod network;
 mod protocol;
+mod replies;
 mod view;
+mod window;
 
 use std::env;
 use std::process::ExitCode;
@@ -52,11 +60,19 @@ fn main() -> ExitCode {
         }
     };
 
-    let options = eframe::NativeOptions::default();
+    // Big enough for the room in the middle and a panel on each side.
+    let options = eframe::NativeOptions {
+        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([1200.0, 750.0]),
+        ..Default::default()
+    };
     let result = eframe::run_native(
         "TAP",
         options,
-        Box::new(move |cc| Ok(Box::new(TapApp::new(&cc.egui_ctx, &host, port)))),
+        Box::new(move |cc| {
+            // Lets egui decode the jpeg pictures of the rooms.
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+            Ok(Box::new(TapApp::new(&cc.egui_ctx, &host, port)))
+        }),
     );
 
     match result {
