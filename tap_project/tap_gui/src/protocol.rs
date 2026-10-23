@@ -83,7 +83,8 @@ pub fn parse_json<T: DeserializeOwned>(line: &str) -> Option<T> {
 }
 
 /// Puts the quests from a QUESTS reply in `quests`, keeping the description
-/// and reward already known from QUEST (QUESTS does not send them).
+/// and reward already known from QUEST (QUESTS does not send them), and the
+/// last progress when a finished quest comes without one.
 pub fn merge_quests(quests: &mut Vec<QuestInfo>, new_list: Vec<QuestInfo>) {
     let mut merged = Vec::new();
     for mut quest in new_list {
@@ -93,6 +94,9 @@ pub fn merge_quests(quests: &mut Vec<QuestInfo>, new_list: Vec<QuestInfo>) {
             }
             if quest.reward.is_empty() {
                 quest.reward = old.reward.clone();
+            }
+            if quest.progress.is_empty() {
+                quest.progress = old.progress.clone();
             }
         }
         merged.push(quest);

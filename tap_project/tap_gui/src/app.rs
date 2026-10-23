@@ -7,7 +7,7 @@ use std::sync::mpsc::Receiver;
 
 use eframe::egui;
 
-use crate::network::spawn_reader;
+use crate::network::{CONNECTION_CLOSED, spawn_reader};
 use crate::protocol::{
     AttackResult, Health, Look, QuestInfo, is_reply, merge_quests, parse_inventory, parse_json,
     parse_look, parse_who,
@@ -104,6 +104,11 @@ impl TapApp {
     /// Handles one line from the server: a reply is matched with the command
     /// it answers, then the line goes to the log.
     pub fn receive(&mut self, line: String) {
+        if line == CONNECTION_CLOSED {
+            // Nothing can be sent anymore: buttons now log "Not connected".
+            self.writer = None;
+            self.pending.clear();
+        }
         let command = if is_reply(&line) {
             self.pending.pop_front()
         } else {
@@ -154,9 +159,22 @@ impl TapApp {
                 }
             }
             "QUEST" => {
-                if let Some(quest) = parse_json::<QuestInfo>(line) {
-                    self.quests.retain(|q| q.quest_id != quest.quest_id);
-                    self.quests.push(quest);
+                if let Some(mut quest) = parse_json::<QuestInfo>(line) {
+                    match self
+                        .quests
+                        .iter_mut()
+                        .find(|q| q.quest_id == quest.quest_id)
+                    {
+                        // Same place in the list. QUEST sends no progress:
+                        // keep the one from the last QUESTS.
+                        Some(old) => {
+                            if quest.progress.is_empty() {
+                                quest.progress = std::mem::take(&mut old.progress);
+                            }
+                            *old = quest;
+                        }
+                        None => self.quests.push(quest),
+                    }
                 }
             }
             "QUESTS" => {
@@ -220,5 +238,40 @@ mod tests {
         // QUESTS gave the progress, QUEST had given the description: both are kept.
         assert_eq!(app.quests[0].progress, "0/1");
         assert_eq!(app.quests[0].description, "Defeat the monster.");
+    }
+
+    #[test]
+    fn quest_turned_in_keeps_its_place_and_progress() {
+        let mut app = TapApp::empty();
+        app.pending.push_back("QUESTS".to_string());
+        app.pending.push_back("QUEST merchant".to_string());
+        app.pending.push_back("QUESTS".to_string());
+        app.receive(
+            r#"OK [{"quest_id": "treasure_quest", "status": "active", "progress": "2/2"}, {"quest_id": "free_prisoner", "status": "active", "progress": "0/1"}]"#
+                .to_string(),
+        );
+        app.receive(r#"OK {"quest_id": "treasure_quest", "description": "Defeat the monster.", "reward": "victory", "status": "completed"}"#.to_string());
+        // The server sends no progress for a completed quest.
+        app.receive(
+            r#"OK [{"quest_id": "treasure_quest", "status": "completed"}, {"quest_id": "free_prisoner", "status": "active", "progress": "0/1"}]"#
+                .to_string(),
+        );
+
+        assert_eq!(app.quests.len(), 2);
+        assert_eq!(app.quests[0].quest_id, "treasure_quest");
+        assert_eq!(app.quests[0].status, "completed");
+        assert_eq!(app.quests[0].progress, "2/2");
+    }
+
+    #[test]
+    fn closed_connection_stops_sending() {
+        let mut app = TapApp::empty();
+        app.pending.push_back("LOOK".to_string());
+        app.receive(CONNECTION_CLOSED.to_string());
+        assert!(app.writer.is_none());
+        assert!(app.pending.is_empty());
+
+        app.send("LOOK");
+        assert_eq!(app.log.last().map(String::as_str), Some("Not connected"));
     }
 }
