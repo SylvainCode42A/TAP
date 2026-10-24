@@ -70,7 +70,7 @@ impl eframe::App for TapApp {
                     self.last_attack.as_ref(),
                     &self.quests,
                 );
-                show_group_name(ui, self.group.as_deref());
+                show_group_name(ui, self.group.as_deref(), self.group_news.as_deref());
                 ui.separator();
                 ui.strong("Map");
                 show_map(ui, &self.map);

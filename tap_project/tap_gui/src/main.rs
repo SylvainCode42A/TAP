@@ -2,8 +2,10 @@
 //!
 //! - `network`: connection thread, lines from the server to the window
 //! - `protocol`: reading the server replies (RFC 42TAP)
+//! - `events`: reading the `EVT` lines (RFC 6.2)
 //! - `app`: window state, commands sent and replies received
 //! - `replies`: what each server reply changes in the window
+//! - `live`: what each `EVT` line changes in the window
 //! - `images`: pictures of the rooms, built into the program
 //! - `view`: drawing helpers (room, player, counters, buttons)
 //! - `window`: the window layout, one panel per zone
@@ -12,8 +14,10 @@
 //! - `fade`: the fade-in of the room panel when the room changes
 
 mod app;
+mod events;
 mod fade;
 mod images;
+mod live;
 mod log_panel;
 mod map;
 mod network;

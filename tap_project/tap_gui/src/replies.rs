@@ -78,6 +78,10 @@ impl TapApp {
     /// GROUP CREATE and GROUP JOIN answer `OK group=<id>`, GROUP LEAVE answers `OK`.
     /// INVITE changes nothing for us. Errors keep the group as it was.
     fn handle_group(&mut self, arg: &str, line: &str) {
+        // The news of the old group means nothing in the new one.
+        if line.starts_with("OK") {
+            self.group_news = None;
+        }
         let action = arg.split_whitespace().next().unwrap_or("").to_uppercase();
         match action.as_str() {
             "CREATE" | "JOIN" => {

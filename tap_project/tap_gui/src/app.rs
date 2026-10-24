@@ -8,6 +8,7 @@ use std::sync::mpsc::Receiver;
 
 use eframe::egui;
 
+use crate::events::parse_event;
 use crate::fade::RoomFade;
 use crate::map::MiniMap;
 use crate::network::{CONNECTION_CLOSED, spawn_reader};
@@ -33,6 +34,8 @@ pub struct TapApp {
     pub group_target: String,
     /// Id of our group, from the last GROUP CREATE / JOIN / LEAVE reply.
     pub group: Option<String>,
+    /// Last change in our group made by someone else, from EVT GROUP.
+    pub group_news: Option<String>,
     /// Commands sent and still waiting for their reply, oldest first.
     /// The server answers in order, so the next `OK` / `ERR` answers the front one.
     pub pending: VecDeque<String>,
@@ -63,6 +66,7 @@ impl TapApp {
             server_players: None,
             group_target: String::new(),
             group: None,
+            group_news: None,
             pending: VecDeque::new(),
             dialogue: None,
             health: None,
@@ -111,7 +115,7 @@ impl TapApp {
     }
 
     /// Handles one line from the server: a reply is matched with the command
-    /// it answers, then the line goes to the log.
+    /// it answers, an event updates the window, then the line goes to the log.
     pub fn receive(&mut self, line: String) {
         if line == CONNECTION_CLOSED {
             // Nothing can be sent anymore: buttons now log "Not connected".
@@ -125,6 +129,9 @@ impl TapApp {
         };
         if let Some(command) = command {
             self.handle_reply(&command, &line);
+        }
+        if let Some(event) = parse_event(&line) {
+            self.handle_event(event);
         }
         self.log.push(line);
     }

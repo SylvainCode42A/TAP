@@ -217,10 +217,14 @@ fn health_color(fraction: f32) -> egui::Color32 {
     }
 }
 
-/// Draws the group we are in, or `-`. Known from our own GROUP replies only:
-/// the server sends no event yet when the group changes (EVT GROUP).
-pub fn show_group_name(ui: &mut egui::Ui, group: Option<&str>) {
-    ui.label(format!("Group: {}", group.unwrap_or("-")));
+/// Draws the group we are in, or `-`, from our own GROUP replies, and the
+/// last change made by someone else (EVT GROUP JOIN / LEAVE).
+pub fn show_group_name(ui: &mut egui::Ui, group: Option<&str>, news: Option<&str>) {
+    let mut text = format!("Group: {}", group.unwrap_or("-"));
+    if let Some(news) = news {
+        text.push_str(&format!(" ({news})"));
+    }
+    ui.label(text);
 }
 
 /// Draws the GROUP buttons. INVITE takes a player name, JOIN the group leader's
