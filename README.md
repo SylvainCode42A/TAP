@@ -28,7 +28,7 @@ a Linux desktop.
 
 ```sh
 make install         # fetch the dependencies of the three crates
-make run-server      # terminal 1: server on 127.0.0.1:7878
+make run-server      # terminal 1: server on port 7878
 make run-client      # terminal 2: CLI client
 make run-client-gui  # terminal 3: GUI client
 ```
@@ -260,7 +260,7 @@ The root `Makefile` drives `cargo` in the three crates:
 |---|---|
 | `make install` | fetch every dependency (`cargo fetch`) |
 | `make build` | build the three programs |
-| `make run-server` | start the server on `127.0.0.1:7878`, from `tap_project/tap_server` where `data/world.yaml` and `logs/` live |
+| `make run-server` | start the server on port 7878 of every interface, from `tap_project/tap_server` where `data/world.yaml` and `logs/` live |
 | `make run-client` | start the CLI client; `make run-client HOST=10.0.0.5 PORT=7878` for another server |
 | `make run-client-gui` | start the GUI client; same `HOST` and `PORT` |
 | `make test` | run every unit test |
