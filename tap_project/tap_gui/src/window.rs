@@ -4,11 +4,11 @@ use eframe::egui;
 
 use crate::app::TapApp;
 use crate::chat::show_chat;
+use crate::group_view::{show_group, show_group_name, show_invite};
 use crate::log_panel::show_log;
 use crate::map::show_map;
 use crate::view::{
-    push_refresh, show_character, show_counters, show_dialogue, show_group, show_group_name,
-    show_inventory, show_invite, show_room,
+    push_refresh, show_character, show_counters, show_dialogue, show_inventory, show_room,
 };
 
 impl eframe::App for TapApp {

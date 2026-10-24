@@ -11,6 +11,7 @@
 //! - `window`: the window layout, one panel per zone
 //! - `log_panel`: the log, coloured by kind of line
 //! - `chat`: the chat panel, apart from the log
+//! - `group_view`: the group zone (our group, invitation, GROUP buttons)
 //! - `map`: the mini-map, built from the exits of each LOOK
 //! - `fade`: the fade-in of the room panel when the room changes
 
@@ -18,6 +19,7 @@ mod app;
 mod chat;
 mod events;
 mod fade;
+mod group_view;
 mod images;
 mod live;
 mod log_panel;
