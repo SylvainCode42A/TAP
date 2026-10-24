@@ -8,6 +8,7 @@ use std::sync::mpsc::Receiver;
 
 use eframe::egui;
 
+use crate::chat::ChatLine;
 use crate::events::parse_event;
 use crate::fade::RoomFade;
 use crate::map::MiniMap;
@@ -51,6 +52,12 @@ pub struct TapApp {
     pub map: MiniMap,
     /// Fade-in of the room panel when the room changes.
     pub fade: RoomFade,
+    /// Chat messages, oldest first.
+    pub chat: Vec<ChatLine>,
+    /// Scope chosen for the next message: GLOBAL, ROOM or GROUP.
+    pub chat_scope: String,
+    /// Message typed in the chat field.
+    pub chat_input: String,
 }
 
 impl TapApp {
@@ -74,6 +81,9 @@ impl TapApp {
             quests: vec![],
             map: MiniMap::default(),
             fade: RoomFade::default(),
+            chat: vec![],
+            chat_scope: "GLOBAL".to_string(),
+            chat_input: String::new(),
         }
     }
 

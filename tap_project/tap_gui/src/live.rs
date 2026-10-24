@@ -1,8 +1,9 @@
 //! What each `EVT` line changes in the window, while we play: other players
-//! coming and going, the player count, our group. The line is read in
+//! coming and going, the player count, our group, the chat. The line is read in
 //! `events.rs`.
 
 use crate::app::TapApp;
+use crate::chat::ChatLine;
 use crate::events::Event;
 
 impl TapApp {
@@ -24,7 +25,8 @@ impl TapApp {
             Event::Players(count) => self.server_players = Some(count),
             Event::GroupJoin(name) => self.group_news = Some(format!("{name} joined")),
             Event::GroupLeave(name) => self.group_news = Some(format!("{name} left")),
-            // Chat and invitations get their own place at the next steps.
+            Event::Chat { scope, from, text } => self.chat.push(ChatLine { scope, from, text }),
+            // Invitations get their own place at the next step.
             _ => {}
         }
     }

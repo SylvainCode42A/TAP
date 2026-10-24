@@ -3,6 +3,7 @@
 use eframe::egui;
 
 use crate::app::TapApp;
+use crate::chat::show_chat;
 use crate::log_panel::show_log;
 use crate::map::show_map;
 use crate::view::{
@@ -78,10 +79,19 @@ impl eframe::App for TapApp {
                 show_inventory(ui, self.inventory.as_deref(), &mut commands);
             });
 
-        // Right: every line sent and received, coloured by kind.
+        // Right: the chat, then every line sent and received, coloured by kind.
         egui::Panel::right("log")
             .default_size(340.0)
             .show(ui, |ui| {
+                ui.heading("Chat");
+                show_chat(
+                    ui,
+                    &self.chat,
+                    &mut self.chat_scope,
+                    &mut self.chat_input,
+                    &mut commands,
+                );
+                ui.separator();
                 ui.heading("Log");
                 show_log(ui, &self.log);
             });

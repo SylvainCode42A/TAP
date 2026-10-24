@@ -2,6 +2,7 @@
 //! the command it answers in `app.rs`.
 
 use crate::app::TapApp;
+use crate::chat::ChatLine;
 use crate::protocol::{
     QuestInfo, merge_quests, parse_inventory, parse_json, parse_look, parse_who,
 };
@@ -71,6 +72,19 @@ impl TapApp {
                 }
             }
             "GROUP" => self.handle_group(arg, line),
+            "CHAT" => {
+                // The server sends our message to the others only: we add
+                // it ourselves, once accepted.
+                if line.starts_with("OK")
+                    && let Some((scope, text)) = arg.split_once(' ')
+                {
+                    self.chat.push(ChatLine {
+                        scope: scope.to_uppercase(),
+                        from: "You".to_string(),
+                        text: text.to_string(),
+                    });
+                }
+            }
             _ => {}
         }
     }
