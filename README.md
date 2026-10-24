@@ -435,20 +435,21 @@ defeat and the respawn at the entrance with 50 HP.
 
 ### What was measured
 
-One review run, 2026-10-24, on the code of this README:
+One review run, 2026-10-24, on a fresh clone of `main` with #76 and #78 merged:
 
 | Check | Result |
 |-------|--------|
 | `make lint` | clean: `rustfmt`, `clippy` with warnings as errors |
-| `make test` | server 64 passed, GUI 20 passed |
+| `make install`, `make build` | clean |
+| `make test` | server 64 passed, GUI 28 passed |
+| 3 `#[ignore]` campaigns, `--release` | 3 passed |
 | scenarios above, 3 scripted clients | every reply and event as written here, defeat and respawn excepted: unit tests only |
 | logs of that run | 200 lines, each one valid JSON for `jq` |
 | another group's CLI client on our server | every command answered, its events seen by our client |
-| our commands on that group's server | connected; its `LOOK`, `WHO` and `INVENTORY` replies differ from RFC 5.1.2, 5.2.2 and 5.4.3; our GUI reads the RFC `LOOK` shape, so it cannot draw their rooms (read from the code, not yet seen on screen) |
+| our commands on that group's server | connected; its `LOOK`, `WHO` and `INVENTORY` replies differ from RFC 5.1.2, 5.2.2 and 5.4.3; their real `LOOK` reply, fed to our GUI parser, is rejected, while an RFC-shaped one is read: our GUI cannot draw their rooms |
 
-Not claimed: the 3 `#[ignore]` campaigns were not part of this run, the
-GUI was checked by hand only, and no load beyond a burst of 30 commands
-was tried.
+Not claimed: the GUI window was checked by hand only, never on the other
+group's server, and no load beyond a burst of 30 commands was tried.
 
 ---
 
