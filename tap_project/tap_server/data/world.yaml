@@ -136,4 +136,4 @@ world:
       giver: "merchant"
       requires_kill: "monster"
       requires_item: "treasure"
-      rewards: ["victory"]
+      rewards: ["Full heal"]

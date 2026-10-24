@@ -40,7 +40,12 @@ fn run(
     match cmd {
         Command::Connect { username } => {
             let mut gs = game_state.lock().unwrap();
-            if gs.players.contains_key(&username) {
+            // Case-insensitive: `Alice` and `alice` could not be told apart.
+            let taken = gs
+                .players
+                .keys()
+                .any(|name| name.to_lowercase() == username.to_lowercase());
+            if taken {
                 Response::Err {
                     code: 201,
                     message: "NAME_IN_USE".to_string(),
@@ -365,6 +370,22 @@ mod tests {
     fn talk(npc: &str) -> Command {
         Command::Talk {
             npc: npc.to_string(),
+        }
+    }
+
+    #[test]
+    fn connect_refuses_a_name_in_use_whatever_its_case() {
+        let gs = Arc::new(Mutex::new(game_with_player("alice", "entrance")));
+        for name in ["alice", "Alice", "ALICE"] {
+            let connect = Command::Connect {
+                username: name.to_string(),
+            };
+            match dispatch(connect, &gs, &None) {
+                Response::Err { code, message } => {
+                    assert_eq!((code, message.as_str()), (201, "NAME_IN_USE"))
+                }
+                Response::Ok(body) => panic!("{} accepted: OK {}", name, body),
+            }
         }
     }
 
