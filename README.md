@@ -1,23 +1,42 @@
 *This project has been created as part of the 42 curriculum by jferone, slidriss, srezzaq.*
 
-# TAP - The Answer Protocol
-### A shared-world text adventure over TCP, in Rust
+<h1 align="center">TAP</h1>
 
-![Rust](https://img.shields.io/badge/Rust-2024-000000?style=for-the-badge&logo=rust&logoColor=white)
-![egui](https://img.shields.io/badge/GUI-egui-blue?style=for-the-badge)
-![RFC](https://img.shields.io/badge/RFC-42TAP-grey?style=for-the-badge)
+<p align="center">
+  <b>T</b>he <b>A</b>nswer <b>P</b>rotocol<br>
+  <i>a shared-world text adventure over TCP, in Rust</i>
+</p>
+<p align="center">
+  <a href="#instructions"><img alt="Rust 2024" src="https://img.shields.io/badge/Rust-2024-4A6CF7?labelColor=0A0D12"></a>
+  <a href="#protocol-implementation"><img alt="RFC 42TAP" src="https://img.shields.io/badge/protocol-RFC_42TAP-4A6CF7?labelColor=0A0D12"></a>
+  <a href="#building-and-running"><img alt="GUI egui" src="https://img.shields.io/badge/GUI-egui-4A6CF7?labelColor=0A0D12"></a>
+  <a href="#server-logging"><img alt="logs JSON Lines" src="https://img.shields.io/badge/logs-JSON_Lines-4A6CF7?labelColor=0A0D12"></a>
+</p>
 
 ---
 
 ## Description
 
-TAP is a shared-world text adventure played over TCP. Several players
-connect to one server, explore a small dungeon, talk to NPCs, pick up
-items, fight a monster and complete quests together. Everything follows
-RFC 42TAP: one UTF-8 line per message, commands from the client, `OK` or
-`ERR` replies and asynchronous `EVT` events from the server.
+### What ?
 
-The goal of a game: defeat the monster and take its treasure.
+A shared-world text adventure: several players explore one dungeon, talk
+to NPCs, pick up items, fight a monster and complete quests together. The
+goal of a game: defeat the monster and take its treasure.
+
+### How ?
+
+RFC 42TAP over TCP: one UTF-8 line per message, commands from the client,
+`OK` or `ERR` replies and asynchronous `EVT` events from the server.
+
+### For ?
+
+Players on a terminal or a window, and any client another group wrote
+against the same RFC.
+
+### Why ?
+
+- One world, many clients acting at once: it must stay consistent.
+- One written protocol: any client talks to any server that follows it.
 
 The repository holds three Rust programs:
 
@@ -35,12 +54,15 @@ Requirements: a Rust toolchain (`rustup`, edition 2024, with `clippy` and
 `rustfmt`) and `make`. The GUI needs the usual X11 or Wayland libraries of
 a Linux desktop.
 
-```sh
-make install         # fetch the dependencies of the three crates
-make run-server      # terminal 1: server on port 7878
-make run-client      # terminal 2: CLI client
-make run-client-gui  # terminal 3: GUI client
-```
+| I want to | Run |
+|---|---|
+| fetch the dependencies | `make install` |
+| start the server | `make run-server` |
+| play in a terminal | `make run-client` |
+| play in a window | `make run-client-gui` |
+| play with no client at all | `nc 127.0.0.1 7878` |
+| join a server on another machine | `make run-client HOST=<ip>` or `make run-client-gui HOST=<ip>` |
+| check the code | `make test`, then `make lint` |
 
 Details in [Building and Running](#building-and-running).
 
@@ -83,6 +105,52 @@ flowchart LR
   exits, references, one connected map with a loop) and refuses to start on a broken world, listing every
   problem at once.
 
+### Life of a command
+
+1. `parsing.rs` reads one line (1024 bytes at most) and logs it as `command`.
+2. It turns the line into a `Command`, or answers `ERR 401` at once: a
+   malformed line never reaches the world.
+3. `dispatch.rs` takes the world lock; the rule module changes `GameState`.
+4. Still under the lock, `events.rs` sends the `EVT` lines to the other
+   players concerned; then the lock is released.
+5. `parsing.rs` writes the `OK` or `ERR` reply and logs it as `reply`.
+
+### Design rules
+
+- **The server is the only authority.** Clients send intents; damage,
+  item ownership and quest conditions are computed on the server.
+- **One lock, one command at a time.** Arrival order is the turn order.
+- **No player hears their own event.** The `OK` reply already told them.
+- **No broken world starts.** Every problem of `world.yaml` is listed at once.
+- **Abuse is logged, not blocked.** See [Server Logging](#server-logging).
+- **Every departure from the RFC is written down.** See below.
+
+### Repository layout
+
+```txt
+Makefile                     build tool: install, build, run-*, test, lint, clean
+tap_project/
+  tap_server/
+    data/world.yaml          the world: rooms, items, NPCs, quests
+    logs/server.jsonl        written at run time, git-ignored
+    src/
+      main.rs                shared types, accept loop, startup
+      world_check.rs         validates world.yaml before the server starts
+      parsing.rs             one client: framing, keywords, OK and ERR, flood watch
+      dispatch.rs            one arm per command, under the world lock
+      combat.rs              ATTACK rounds, death and respawn
+      quest.rs               QUEST and QUESTS, conditions read from the player
+      group.rs               GROUP commands, leader succession
+      items.rs               TAKE, DROP, lookup by id or name
+      events.rs              EVT lines, disconnection cleanup
+      logging.rs             JSON Lines, writer thread, abuse counters
+      game_stress.rs         random campaigns checking invariants, tests only
+  tap_client/
+    src/main.rs              CLI: reader thread and keyboard loop
+    assets/                  room and item pictures, shown by the GUI
+  tap_gui/src/               egui client: network thread, reply parsing, room view, map, log
+```
+
 ---
 
 ## Protocol Implementation
@@ -107,6 +175,28 @@ choices below were made.
 | `GROUP INVITE` of an unknown player | no code | `ERR 404 PLAYER_NOT_FOUND` | same family as the other 404 lookups |
 | Identifiers | examples use `loc.`, `item.`, `npc.` prefixes | bare ids from `world.yaml` (`cell_key`, `monster`) | the RFC shows the prefixes in examples only; every reply uses the same ids as LOOK |
 | `QUEST` reply status | example shows `available` | first `QUEST` accepts at once: `active` | one command both accepts and turns in, see [Quest System](#quest-system) |
+
+### Example session
+
+Lines from a recorded run, `C:` sent by alice's client, `S:` sent by the
+server. `...` marks lines left out.
+
+```txt
+S: OK hello proto=1
+C: CONNECT alice
+S: OK connected
+S: EVT ROOM PRESENCE ENTER bob
+S: EVT STATS players=2
+C: MOVE east
+S: OK room=guard_room
+C: TAKE Cell Key
+S: OK taken=cell_key
+...
+C: ATTACK monster
+S: OK {"attacker_hp": 88, "target_hp": 5, "damage": 15, "status": "combat"}
+C: ATTACK monster
+S: OK {"attacker_hp": 88, "target_hp": 0, "damage": 15, "status": "victory"}
+```
 
 ---
 
@@ -350,6 +440,34 @@ defeat and the respawn at the entrance with 50 HP.
 **Logs**: run the scenarios above while watching
 `tail -f tap_project/tap_server/logs/server.jsonl | jq -c .`.
 
+### What was measured
+
+One review run, 2026-10-24, on the code of this README:
+
+| Check | Result |
+|---|---|
+| `make lint` | clean: `rustfmt`, `clippy` with warnings as errors |
+| `make test` | server 64 passed, GUI 20 passed |
+| scenarios above, 3 scripted clients | every reply and event as written here, defeat and respawn excepted: unit tests only |
+| logs of that run | 200 lines, each one valid JSON for `jq` |
+| another group's CLI client on our server | every command answered, its events seen by our client |
+| our commands on that group's server | connected; its `LOOK`, `WHO` and `INVENTORY` replies differ from RFC 5.1.2, 5.2.2 and 5.4.3, so our GUI shows no room there |
+
+Not claimed: the 3 `#[ignore]` campaigns were not part of this run, the
+GUI was checked by hand only, and no load beyond a burst of 30 commands
+was tried.
+
+---
+
+## Known limits
+
+- **No persistence.** A restart resets the world and every player.
+- **One lock.** Right for 8 rooms and a few players; a large world would
+  queue its players behind it.
+- **A name is the only identity.** No password: a free name is anyone's.
+- **Abuse is logged, not blocked.** A flooding client keeps being served.
+- **Fixed address.** The server always listens on port 7878.
+
 ---
 
 ## Resources
@@ -381,6 +499,12 @@ the DRAFT tools (FMBOA, BIOPGE) and the GRAIN scale.
 | Requirements | Claude extracted subject v1.4 and RFC 42TAP into the DRAFT FMBOA grid (conditions, specifications, requirements), then challenged hard both the soundness of the subject and jferone's own positions |
 | Game engine (combat, quests, groups, items, world validation, WHO), CHAT and `EVT`, server logging, RFC fixes, Makefile, README | Claude stress-tested every piece of code produced, whether written by hand or generated |
 | Final review, 2026-10-24 | Claude Code replayed the README scenarios against `main`, found that #62 and #63 never reached it and found four defects; it wrote the PR restoring them and the four fixes of #78, under jferone's review |
+
+**How it is controlled.** Nothing an agent returned was merged before
+jferone reviewed it; every fix came with its test and a replayed scenario.
+
+**Attribution.** Every commit is authored by its human author; no commit
+on GitHub carries an AI trailer.
 
 ---
 
