@@ -334,4 +334,16 @@ defeat and the respawn at the entrance with 50 HP.
 
 ### AI usage
 
-<!-- OWED: written last by each member, before submission. -->
+<!-- OWED: slidriss and srezzaq add their own part below. -->
+
+**jferone**
+
+Written or generated, code carries the same design value: it went through
+the same design work, the same stress tests and the same check against
+the DRAFT tools (FMBOA, BIOPGE) and the GRAIN scale.
+
+| Task | AI use |
+|---|---|
+| Requirements | Claude extracted subject v1.4 and RFC 42TAP into the DRAFT FMBOA grid (conditions, specifications, requirements), then challenged hard both the soundness of the subject and jferone's own positions |
+| Game engine (combat, quests, groups, items, world validation, WHO), CHAT and `EVT`, server logging, RFC fixes, Makefile, README | Claude stress-tested every piece of code produced, whether written by hand or generated |
+| Final review, 2026-10-24 | Claude Code replayed the README scenarios against `main`, found that #62 and #63 never reached it and found four defects; it wrote the PR restoring them and the four fixes of #78, under jferone's review |
