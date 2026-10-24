@@ -1,6 +1,13 @@
 *This project has been created as part of the 42 curriculum by jferone, slidriss, srezzaq.*
 
 # TAP - The Answer Protocol
+### A shared-world text adventure over TCP, in Rust
+
+![Rust](https://img.shields.io/badge/Rust-2024-000000?style=for-the-badge&logo=rust&logoColor=white)
+![egui](https://img.shields.io/badge/GUI-egui-blue?style=for-the-badge)
+![RFC](https://img.shields.io/badge/RFC-42TAP-grey?style=for-the-badge)
+
+---
 
 ## Description
 
@@ -20,6 +27,8 @@ The repository holds three Rust programs:
 | CLI client | `tap_project/tap_client` | type protocol commands, see every line live |
 | GUI client | `tap_project/tap_gui` | egui window: room, inventory, buttons, chat |
 
+---
+
 ## Instructions
 
 Requirements: a Rust toolchain (`rustup`, edition 2024, with `clippy` and
@@ -34,6 +43,8 @@ make run-client-gui  # terminal 3: GUI client
 ```
 
 Details in [Building and Running](#building-and-running).
+
+---
 
 ## Architecture
 
@@ -72,6 +83,8 @@ flowchart LR
   exits, references, one connected map with a loop) and refuses to start on a broken world, listing every
   problem at once.
 
+---
+
 ## Protocol Implementation
 
 The server follows RFC 42TAP. Where the RFC is silent or inconsistent, the
@@ -94,6 +107,8 @@ choices below were made.
 | `GROUP INVITE` of an unknown player | no code | `ERR 404 PLAYER_NOT_FOUND` | same family as the other 404 lookups |
 | Identifiers | examples use `loc.`, `item.`, `npc.` prefixes | bare ids from `world.yaml` (`cell_key`, `monster`) | the RFC shows the prefixes in examples only; every reply uses the same ids as LOOK |
 | `QUEST` reply status | example shows `available` | first `QUEST` accepts at once: `active` | one command both accepts and turns in, see [Quest System](#quest-system) |
+
+---
 
 ## Combat System
 
@@ -134,6 +149,8 @@ and 36 damage.
 
 Every round is broadcast to the room as `EVT ROOM COMBAT`.
 
+---
+
 ## Quest System
 
 A quest is given by one NPC (`giver`) and is done when its conditions
@@ -165,6 +182,8 @@ stateDiagram-v2
 | `free_prisoner` - Free the Prisoner | prisoner (secret cell) | hold the `cell_key` |
 | `treasure_quest` - The Treasure | merchant (entrance) | beat the `monster`, hold the `treasure` |
 
+---
+
 ## World Design
 
 <!-- review: slidriss -->
@@ -174,14 +193,14 @@ GUI are in `tap_project/tap_client/assets`.
 
 ```mermaid
 flowchart TB
-    treasure[Treasure Room]
-    monster[Monster Lair]
-    library[Library]
-    armory[Armory]
-    corridor[Corridor]
-    guard[Guard Room]
-    entrance[Dungeon Entrance]
-    cell[Secret Cell]
+    treasure["Treasure Room<br>treasure"]
+    monster["Monster Lair<br>monster, enemy"]
+    library["Library<br>shield, fixed"]
+    armory["Armory<br>sword"]
+    corridor["Corridor<br>torch, fixed"]
+    guard["Guard Room<br>cell key"]
+    entrance["Dungeon Entrance<br>merchant, start"]
+    cell["Secret Cell<br>prisoner"]
     monster -- east / west --- treasure
     library -- north / south --- monster
     armory -- north / south_alt --- monster
@@ -209,6 +228,8 @@ flowchart TB
   torch and the shield are scenery that LOOK shows but TAKE refuses.
 - The loop entrance - corridor - library - monster lair - armory - guard
   room - entrance lets players reach the monster by two paths.
+
+---
 
 ## Server Logging
 
@@ -243,15 +264,24 @@ jq -c 'select(.event | startswith("abuse_"))' tap_project/tap_server/logs/server
 jq -c 'select(.player == "alice")' tap_project/tap_server/logs/server.jsonl            # one player
 ```
 
+---
+
 ## Group Contributions
 
 <!-- review: each member checks their own line -->
 
-| Member | Responsibilities |
-|---|---|
-| slidriss | TCP server and multi-client threads, command parsing into `Command`, dispatcher, greeting, case-insensitive commands, RFC error codes, player streams for broadcast, disconnection, pipelined commands fix, LOOK JSON, world data and room pictures |
-| srezzaq | CLI client, GUI client (egui: room view, inventory, action buttons, counters, NPC dialogue, health bar, quests, chat view) |
-| jferone | game engine: combat, quests, groups, items, world validation, WHO; CHAT and every `EVT`; server logging; RFC conformance fixes; Makefile; README assembly |
+| Member | Area | Parts |
+|---|---|---|
+| **slidriss** | network | TCP server, one thread per client, greeting, player streams for broadcast, disconnection, pipelined commands fix |
+| | protocol | parsing into `Command`, dispatcher, case-insensitive commands, RFC error codes, LOOK JSON |
+| | world | world data, room pictures |
+| **srezzaq** | CLI client | the whole client |
+| | GUI client | egui: room view, inventory, action buttons, counters, NPC dialogue, health bar, quests, chat view, minimap |
+| **jferone** | game engine | combat, quests, groups, items, world validation, WHO |
+| | events | CHAT and every `EVT` |
+| | operations | server logging, RFC conformance fixes, Makefile, README assembly |
+
+---
 
 ## Building and Running
 
@@ -280,6 +310,8 @@ player is typing.
 **GUI client** <!-- review: srezzaq -->: enter a name and press Connect;
 the room, the inventory and the actions are buttons; the log and the
 chat are shown apart.
+
+---
 
 ## Testing
 
@@ -318,6 +350,8 @@ defeat and the respawn at the entrance with 50 HP.
 **Logs**: run the scenarios above while watching
 `tail -f tap_project/tap_server/logs/server.jsonl | jq -c .`.
 
+---
+
 ## Resources
 
 - RFC 42TAP, attached to the subject: the protocol of record.
@@ -347,3 +381,7 @@ the DRAFT tools (FMBOA, BIOPGE) and the GRAIN scale.
 | Requirements | Claude extracted subject v1.4 and RFC 42TAP into the DRAFT FMBOA grid (conditions, specifications, requirements), then challenged hard both the soundness of the subject and jferone's own positions |
 | Game engine (combat, quests, groups, items, world validation, WHO), CHAT and `EVT`, server logging, RFC fixes, Makefile, README | Claude stress-tested every piece of code produced, whether written by hand or generated |
 | Final review, 2026-10-24 | Claude Code replayed the README scenarios against `main`, found that #62 and #63 never reached it and found four defects; it wrote the PR restoring them and the four fixes of #78, under jferone's review |
+
+---
+
+*Built at 42 by jferone, slidriss and srezzaq.*
