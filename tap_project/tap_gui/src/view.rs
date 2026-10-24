@@ -227,6 +227,24 @@ pub fn show_group_name(ui: &mut egui::Ui, group: Option<&str>, news: Option<&str
     ui.label(text);
 }
 
+/// Draws the invitation to a group, if any: Join sends GROUP JOIN with the
+/// leader's name (RFC 5.3.3), Ignore only hides it. Both close it.
+pub fn show_invite(ui: &mut egui::Ui, invite: &mut Option<String>, commands: &mut Vec<String>) {
+    let Some(leader) = invite.clone() else {
+        return;
+    };
+    ui.horizontal_wrapped(|ui| {
+        ui.label(format!("{leader} invited you to a group."));
+        if ui.button(format!("Join {leader}")).clicked() {
+            commands.push(format!("GROUP JOIN {leader}"));
+            *invite = None;
+        }
+        if ui.button("Ignore").clicked() {
+            *invite = None;
+        }
+    });
+}
+
 /// Draws the GROUP buttons. INVITE takes a player name, JOIN the group leader's
 /// name (RFC 5.3.3).
 pub fn show_group(ui: &mut egui::Ui, target: &mut String, commands: &mut Vec<String>) {

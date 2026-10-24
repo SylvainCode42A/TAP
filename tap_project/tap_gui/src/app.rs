@@ -37,6 +37,8 @@ pub struct TapApp {
     pub group: Option<String>,
     /// Last change in our group made by someone else, from EVT GROUP.
     pub group_news: Option<String>,
+    /// Leader of the group we are invited to, from EVT GROUP INVITE.
+    pub invite: Option<String>,
     /// Commands sent and still waiting for their reply, oldest first.
     /// The server answers in order, so the next `OK` / `ERR` answers the front one.
     pub pending: VecDeque<String>,
@@ -74,6 +76,7 @@ impl TapApp {
             group_target: String::new(),
             group: None,
             group_news: None,
+            invite: None,
             pending: VecDeque::new(),
             dialogue: None,
             health: None,

@@ -91,19 +91,22 @@ impl TapApp {
 
     /// GROUP CREATE and GROUP JOIN answer `OK group=<id>`, GROUP LEAVE answers `OK`.
     /// INVITE changes nothing for us. Errors keep the group as it was.
+    /// The news of the old group is cleared when our group changes.
     fn handle_group(&mut self, arg: &str, line: &str) {
-        // The news of the old group means nothing in the new one.
-        if line.starts_with("OK") {
-            self.group_news = None;
-        }
         let action = arg.split_whitespace().next().unwrap_or("").to_uppercase();
         match action.as_str() {
             "CREATE" | "JOIN" => {
                 if let Some(id) = line.strip_prefix("OK group=") {
                     self.group = Some(id.trim().to_string());
+                    self.group_news = None;
+                    // In a group now: an invitation still shown is outdated.
+                    self.invite = None;
                 }
             }
-            "LEAVE" if line.starts_with("OK") => self.group = None,
+            "LEAVE" if line.starts_with("OK") => {
+                self.group = None;
+                self.group_news = None;
+            }
             _ => {}
         }
     }
@@ -190,6 +193,7 @@ mod tests {
         let mut app = TapApp::empty();
         for command in [
             "GROUP CREATE",
+            "GROUP INVITE carol",
             "GROUP JOIN bob",
             "GROUP LEAVE",
             "GROUP LEAVE",
@@ -198,11 +202,18 @@ mod tests {
         }
         app.receive("OK group=g1".to_string());
         assert_eq!(app.group.as_deref(), Some("g1"));
+        // Someone else's news stays until our own group changes.
+        app.group_news = Some("bob left".to_string());
+        // INVITE does not change our group: the news stays.
+        app.receive("OK".to_string());
+        assert_eq!(app.group_news.as_deref(), Some("bob left"));
         // Already in a group: the error keeps it.
         app.receive("ERR 402 ALREADY_IN_GROUP".to_string());
         assert_eq!(app.group.as_deref(), Some("g1"));
+        assert_eq!(app.group_news.as_deref(), Some("bob left"));
         app.receive("OK".to_string());
         assert!(app.group.is_none());
+        assert!(app.group_news.is_none());
         app.receive("ERR 401 NOT_IN_GROUP".to_string());
         assert!(app.group.is_none());
     }

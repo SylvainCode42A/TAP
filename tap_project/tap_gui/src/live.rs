@@ -1,5 +1,5 @@
 //! What each `EVT` line changes in the window, while we play: other players
-//! coming and going, the player count, our group, the chat. The line is read in
+//! coming and going, the player count, our group, the chat, invitations. The line is read in
 //! `events.rs`.
 
 use crate::app::TapApp;
@@ -26,8 +26,9 @@ impl TapApp {
             Event::GroupJoin(name) => self.group_news = Some(format!("{name} joined")),
             Event::GroupLeave(name) => self.group_news = Some(format!("{name} left")),
             Event::Chat { scope, from, text } => self.chat.push(ChatLine { scope, from, text }),
-            // Invitations get their own place at the next step.
-            _ => {}
+            Event::GroupInvite(leader) => self.invite = Some(leader),
+            // Our team's combat events and unknown events: log only.
+            Event::Other => {}
         }
     }
 }
@@ -77,7 +78,9 @@ mod tests {
         assert_eq!(app.group_news.as_deref(), Some("bob joined"));
         app.receive("EVT GROUP LEAVE bob".to_string());
         assert_eq!(app.group_news.as_deref(), Some("bob left"));
+        app.receive("EVT GROUP INVITE carol".to_string());
+        assert_eq!(app.invite.as_deref(), Some("carol"));
         // Every event still goes to the log.
-        assert_eq!(app.log.len(), 3);
+        assert_eq!(app.log.len(), 4);
     }
 }

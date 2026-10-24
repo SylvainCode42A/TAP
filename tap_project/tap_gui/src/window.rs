@@ -8,7 +8,7 @@ use crate::log_panel::show_log;
 use crate::map::show_map;
 use crate::view::{
     push_refresh, show_character, show_counters, show_dialogue, show_group, show_group_name,
-    show_inventory, show_room,
+    show_inventory, show_invite, show_room,
 };
 
 impl eframe::App for TapApp {
@@ -72,6 +72,7 @@ impl eframe::App for TapApp {
                     &self.quests,
                 );
                 show_group_name(ui, self.group.as_deref(), self.group_news.as_deref());
+                show_invite(ui, &mut self.invite, &mut commands);
                 ui.separator();
                 ui.strong("Map");
                 show_map(ui, &self.map);
