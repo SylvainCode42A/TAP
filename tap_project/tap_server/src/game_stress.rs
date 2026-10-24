@@ -49,7 +49,13 @@ fn npc_name_ignores_case_and_surrounding_spaces() {
 fn weird_targets_never_panic() {
     let long = "x".repeat(10_000);
     let targets = [
-        "", "   ", "monstre", "mon ster", "\u{1F47E}", "\u{e9}", &long,
+        "",
+        "   ",
+        "monstre",
+        "mon ster",
+        "\u{1F47E}",
+        "\u{e9}",
+        &long,
     ];
 
     for target in targets {
@@ -72,7 +78,10 @@ fn unknown_player_is_404_everywhere() {
 fn spawned_but_undefined_npc_is_404_not_panic() {
     let mut gs = game_with_player("alice", "corridor");
     let corridor = gs.world.world.locations.get_mut("corridor").unwrap();
-    corridor.spawns.push(Spawn { npc_type: "phantom".to_string(), count: 1 });
+    corridor.spawns.push(Spawn {
+        npc_type: "phantom".to_string(),
+        count: 1,
+    });
 
     assert!(is_err(combat::attack(&mut gs, "alice", "phantom"), 404));
     assert!(is_err(quest::quest(&mut gs, "alice", "phantom"), 406));
@@ -169,14 +178,27 @@ impl Rng {
 const PLAYERS: [&str; 4] = ["alice", "bob", "carol", "dave"];
 /// The 8 rooms of `world.yaml`, where a campaign teleports players.
 const ROOMS: [&str; 8] = [
-    "entrance", "corridor", "guard_room", "library",
-    "armory", "monster_room", "treasure", "secret_cell",
+    "entrance",
+    "corridor",
+    "guard_room",
+    "library",
+    "armory",
+    "monster_room",
+    "treasure",
+    "secret_cell",
 ];
 /// Targets of `ATTACK` and `QUEST`: valid ids and names in several cases,
 /// plus an unknown NPC, an empty name and an emoji.
 const NAMES: [&str; 9] = [
-    "monster", "Monster", " MONSTER ", "merchant", "prisoner",
-    "Prisoner", "ghost", "", "\u{1F47E}",
+    "monster",
+    "Monster",
+    " MONSTER ",
+    "merchant",
+    "prisoner",
+    "Prisoner",
+    "ghost",
+    "",
+    "\u{1F47E}",
 ];
 /// Items a campaign gives and takes away by hand.
 const ITEMS: [&str; 3] = ["sword", "cell_key", "treasure"];
@@ -211,7 +233,6 @@ fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
     let mut transcript: Vec<String> = Vec::new();
 
     for step in 0..steps {
-
         // 1. One random action by one random player.
         let who = rng.pick(&PLAYERS);
         let reply = match rng.next() % 8 {
@@ -246,44 +267,56 @@ fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
                 transcript.push(body.clone());
             }
             Response::Err { code, message } => {
-                assert!([404, 405, 406].contains(code),
-                    "step {step}: unexpected code {code}");
+                assert!(
+                    [404, 405, 406].contains(code),
+                    "step {step}: unexpected code {code}"
+                );
                 transcript.push(format!("{code} {message}"));
             }
         }
 
         // 3. Players: hp in bounds, fights and kills only hostile NPCs.
         for (name, player) in &gs.players {
-            assert!((1..=MAX_HP).contains(&player.hp),
-                "step {step}: {name} hp {}", player.hp);
+            assert!(
+                (1..=MAX_HP).contains(&player.hp),
+                "step {step}: {name} hp {}",
+                player.hp
+            );
             if let Some(target) = &player.in_combat {
-                assert!(gs.world.world.npcs[target].hostile,
-                    "step {step}: {name} fights a friendly NPC");
+                assert!(
+                    gs.world.world.npcs[target].hostile,
+                    "step {step}: {name} fights a friendly NPC"
+                );
             }
             for kill in &player.kills {
-                assert!(gs.world.world.npcs[kill].hostile,
-                    "step {step}: {name} killed a friendly NPC");
+                assert!(
+                    gs.world.world.npcs[kill].hostile,
+                    "step {step}: {name} killed a friendly NPC"
+                );
             }
         }
 
         // 4. NPC hp in bounds: never 0 stored, never above max.
         for (npc, hp) in &gs.npc_hp {
-            assert!((1..=max_npc_hp[npc]).contains(hp),
-                "step {step}: {npc} hp {hp}");
+            assert!(
+                (1..=max_npc_hp[npc]).contains(hp),
+                "step {step}: {npc} hp {hp}"
+            );
         }
 
         // 5. A completed quest stays completed forever.
         for (name, quest_id) in &completed {
             let status = gs.players[name].quests.get(quest_id);
-            assert_eq!(status, Some(&QuestStatus::Completed),
-                "step {step}: {name} lost completed {quest_id}");
+            assert_eq!(
+                status,
+                Some(&QuestStatus::Completed),
+                "step {step}: {name} lost completed {quest_id}"
+            );
         }
         for (name, player) in &gs.players {
             for (quest_id, status) in &player.quests {
                 let entry = (name.clone(), quest_id.clone());
-                if *status == QuestStatus::Completed
-                    && !completed.contains(&entry)
-                {
+                if *status == QuestStatus::Completed && !completed.contains(&entry) {
                     completed.push(entry);
                 }
             }
@@ -299,7 +332,11 @@ fn random_campaign(seed: u64, steps: usize) -> Vec<String> {
 #[test]
 fn random_campaign_keeps_invariants() {
     let outcomes = [
-        "\"victory\"", "\"defeated\"", "\"completed\"", "405 ", "406 ",
+        "\"victory\"",
+        "\"defeated\"",
+        "\"completed\"",
+        "405 ",
+        "406 ",
     ];
     let mut seen: HashMap<&str, usize> = HashMap::new();
 
@@ -316,8 +353,10 @@ fn random_campaign_keeps_invariants() {
 
     println!("{seen:?}");
     for outcome in outcomes {
-        assert!(seen.get(outcome).copied().unwrap_or(0) > 0,
-            "campaign never reached {outcome}: {seen:?}");
+        assert!(
+            seen.get(outcome).copied().unwrap_or(0) > 0,
+            "campaign never reached {outcome}: {seen:?}"
+        );
     }
 }
 
@@ -331,8 +370,8 @@ fn random_campaign_is_deterministic() {
 /// `WHO` counts every connected player, wherever they stand (RFC 5.2.2).
 #[test]
 fn who_counts_every_player() {
+    use crate::{Command, dispatch};
     use std::sync::{Arc, Mutex};
-    use crate::{dispatch, Command};
 
     let mut gs = game_with_player("alice", "entrance");
     add_player(&mut gs, "bob", "treasure");
@@ -371,8 +410,9 @@ fn group_campaign(seed: u64, steps: usize) -> HashMap<&'static str, usize> {
     use crate::group;
 
     let names = ["alice", "bob", "carol", "dave", "erin", "frank"];
-    let targets = ["alice", "bob", "carol", "dave", "erin", "frank", "ghost",
-        "", " bob "];
+    let targets = [
+        "alice", "bob", "carol", "dave", "erin", "frank", "ghost", "", " bob ",
+    ];
     let mut gs = game_with_player("alice", "entrance");
     for name in &names[1..] {
         add_player(&mut gs, name, "entrance");
@@ -399,14 +439,20 @@ fn group_campaign(seed: u64, steps: usize) -> HashMap<&'static str, usize> {
         let mut seen: Vec<&String> = Vec::new();
         for (id, grp) in &gs.groups {
             assert!(!grp.members.is_empty(), "step {step}: {id} is empty");
-            assert!(grp.members.contains(&grp.leader),
-                "step {step}: leader of {id} is not a member");
+            assert!(
+                grp.members.contains(&grp.leader),
+                "step {step}: leader of {id} is not a member"
+            );
             for member in &grp.members {
-                assert!(!seen.contains(&member),
-                    "step {step}: {member} is in two groups or twice");
+                assert!(
+                    !seen.contains(&member),
+                    "step {step}: {member} is in two groups or twice"
+                );
                 seen.push(member);
-                assert!(!grp.invited.contains(member),
-                    "step {step}: {member} is both member and invited");
+                assert!(
+                    !grp.invited.contains(member),
+                    "step {step}: {member} is both member and invited"
+                );
             }
         }
     }
@@ -424,8 +470,10 @@ fn group_campaign_keeps_invariants() {
     }
     println!("{total:?}");
     for verb in ["create", "invite", "join", "leave"] {
-        assert!(total.get(verb).copied().unwrap_or(0) > 0,
-            "{verb} never succeeded: {total:?}");
+        assert!(
+            total.get(verb).copied().unwrap_or(0) > 0,
+            "{verb} never succeeded: {total:?}"
+        );
     }
 }
 

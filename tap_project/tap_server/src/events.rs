@@ -28,7 +28,7 @@
 
 use std::io::Write;
 
-use crate::{group, GameState, Response};
+use crate::{GameState, Response, group};
 
 // MARK: - Delivery
 
@@ -44,7 +44,8 @@ fn send(gs: &GameState, recipients: &[String], event: &str) {
 
 /// Players in `room`, `except` excluded.
 fn in_room(gs: &GameState, room: &str, except: &str) -> Vec<String> {
-    gs.players.values()
+    gs.players
+        .values()
         .filter(|p| p.current_room == room && p.username != except)
         .map(|p| p.username.clone())
         .collect()
@@ -56,7 +57,9 @@ fn in_room(gs: &GameState, room: &str, except: &str) -> Vec<String> {
 pub fn group_mates(gs: &GameState, username: &str) -> Vec<String> {
     match group::group_of(gs, username) {
         None => vec![],
-        Some(id) => gs.groups[&id].members.iter()
+        Some(id) => gs.groups[&id]
+            .members
+            .iter()
             .filter(|member| *member != username)
             .cloned()
             .collect(),
@@ -94,7 +97,11 @@ pub fn moved(gs: &GameState, username: &str, from: &str) {
 /// `EVT STATS players=<n>` to every connected player.
 pub fn players_count(gs: &GameState) {
     let everyone: Vec<String> = gs.senders.keys().cloned().collect();
-    send(gs, &everyone, &format!("STATS players={}", gs.players.len()));
+    send(
+        gs,
+        &everyone,
+        &format!("STATS players={}", gs.players.len()),
+    );
 }
 
 // MARK: - CHAT
@@ -102,7 +109,10 @@ pub fn players_count(gs: &GameState) {
 /// `401 INVALID_MESSAGE` when `message` holds a control character.
 fn check_message(message: &str) -> Result<(), Response> {
     if message.chars().any(char::is_control) {
-        return Err(Response::Err { code: 401, message: "INVALID_MESSAGE".to_string() });
+        return Err(Response::Err {
+            code: 401,
+            message: "INVALID_MESSAGE".to_string(),
+        });
     }
     Ok(())
 }
@@ -117,7 +127,9 @@ pub fn chat_global(gs: &GameState, username: &str, message: &str) -> Response {
     if let Err(reply) = check_message(message) {
         return reply;
     }
-    let others: Vec<String> = gs.senders.keys()
+    let others: Vec<String> = gs
+        .senders
+        .keys()
         .filter(|name| *name != username)
         .cloned()
         .collect();
@@ -137,7 +149,10 @@ pub fn chat_room(gs: &GameState, username: &str, message: &str) -> Response {
         return reply;
     }
     let Some(player) = gs.players.get(username) else {
-        return Response::Err { code: 404, message: "Player not CONNECTED".to_string() };
+        return Response::Err {
+            code: 404,
+            message: "Player not CONNECTED".to_string(),
+        };
     };
     let others = in_room(gs, &player.current_room, username);
     send(gs, &others, &format!("ROOM CHAT {username} {message}"));
@@ -157,9 +172,16 @@ pub fn chat_group(gs: &GameState, username: &str, message: &str) -> Response {
         return reply;
     }
     if group::group_of(gs, username).is_none() {
-        return Response::Err { code: 401, message: "NOT_IN_GROUP".to_string() };
+        return Response::Err {
+            code: 401,
+            message: "NOT_IN_GROUP".to_string(),
+        };
     }
-    send(gs, &group_mates(gs, username), &format!("GROUP CHAT {username} {message}"));
+    send(
+        gs,
+        &group_mates(gs, username),
+        &format!("GROUP CHAT {username} {message}"),
+    );
     Response::Ok(String::new())
 }
 
@@ -175,7 +197,11 @@ pub fn group_invite(gs: &GameState, username: &str, target: &str) {
 
 /// `EVT GROUP JOIN <username>` to the other members, after the join.
 pub fn group_join(gs: &GameState, username: &str) {
-    send(gs, &group_mates(gs, username), &format!("GROUP JOIN {username}"));
+    send(
+        gs,
+        &group_mates(gs, username),
+        &format!("GROUP JOIN {username}"),
+    );
 }
 
 /// `EVT GROUP LEAVE <username>` to `mates`, the members left behind,
@@ -201,7 +227,9 @@ pub fn combat(gs: &GameState, username: &str, room: &str, npc_id: &str, reply: &
     };
     let event = format!(
         "ROOM COMBAT {username} {npc_id} damage={} target_hp={} status={}",
-        round["damage"], round["target_hp"], round["status"].as_str().unwrap_or("unknown")
+        round["damage"],
+        round["target_hp"],
+        round["status"].as_str().unwrap_or("unknown")
     );
     send(gs, &in_room(gs, room, username), &event);
 }
@@ -230,8 +258,8 @@ pub fn disconnect(gs: &mut GameState, username: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::game_with_player;
     use crate::Player;
+    use crate::test_support::game_with_player;
     use std::io::{BufRead, BufReader};
     use std::net::{TcpListener, TcpStream};
 
@@ -260,6 +288,7 @@ mod tests {
         client.lines().map(|line| line.unwrap()).collect()
     }
 
+    /// alice leads, bob joined.
     fn group_of_two(gs: &mut GameState) {
         group::create(gs, "alice");
         group::invite(gs, "alice", "bob");
@@ -307,9 +336,18 @@ mod tests {
     fn chat_refuses_control_characters_keeps_unicode() {
         let (gs, clients) = game(&["alice", "bob"]);
         let escape = "\u{1b}[2Jgotcha";
-        assert!(matches!(chat_global(&gs, "alice", escape), Response::Err { code: 401, .. }));
-        assert!(matches!(chat_room(&gs, "alice", escape), Response::Err { code: 401, .. }));
-        assert!(matches!(chat_global(&gs, "alice", "héllo ✓"), Response::Ok(_)));
+        assert!(matches!(
+            chat_global(&gs, "alice", escape),
+            Response::Err { code: 401, .. }
+        ));
+        assert!(matches!(
+            chat_room(&gs, "alice", escape),
+            Response::Err { code: 401, .. }
+        ));
+        assert!(matches!(
+            chat_global(&gs, "alice", "héllo ✓"),
+            Response::Ok(_)
+        ));
         drop(gs);
         let inboxes: Vec<Vec<String>> = clients.into_iter().map(inbox).collect();
         assert_eq!(inboxes[1], ["EVT GLOBAL CHAT alice héllo ✓"]);
@@ -341,7 +379,10 @@ mod tests {
         drop(gs);
         let inboxes: Vec<Vec<String>> = clients.into_iter().map(inbox).collect();
         assert!(inboxes[0].is_empty());
-        assert_eq!(inboxes[1], ["EVT ROOM COMBAT alice monster damage=5 target_hp=15 status=combat"]);
+        assert_eq!(
+            inboxes[1],
+            ["EVT ROOM COMBAT alice monster damage=5 target_hp=15 status=combat"]
+        );
         assert!(inboxes[2].is_empty());
     }
 
@@ -372,11 +413,14 @@ mod tests {
         assert_eq!(group::group_of(&gs, "bob"), None);
         drop(gs);
         let inboxes: Vec<Vec<String>> = clients.into_iter().map(inbox).collect();
-        assert_eq!(inboxes[0], [
-            "EVT GROUP LEAVE bob",
-            "EVT ROOM PRESENCE LEAVE bob",
-            "EVT STATS players=1",
-        ]);
+        assert_eq!(
+            inboxes[0],
+            [
+                "EVT GROUP LEAVE bob",
+                "EVT ROOM PRESENCE LEAVE bob",
+                "EVT STATS players=1",
+            ]
+        );
         assert!(inboxes[1].is_empty());
     }
 }
