@@ -215,12 +215,20 @@ Combat states, as reported by `STATUS` and `ATTACK`:
 
 ```mermaid
 stateDiagram-v2
-    healthy --> combat: ATTACK, both alive
-    wounded --> combat: ATTACK, both alive
-    combat --> combat: ATTACK, both alive
-    combat --> wounded: victory, MOVE away, or defeat (respawn with 50 HP)
-    wounded --> healthy: quest turned in (full heal)
+    direction LR
+    healthy --> combat: ATTACK
+    wounded --> combat: ATTACK
+    combat --> combat: ATTACK
+    combat --> wounded: fight ends
+    wounded --> healthy: quest done
 ```
+
+| From | When | To |
+|---|---|---|
+| `healthy` or `wounded` | `ATTACK`, both sides still standing | `combat` |
+| `combat` | `ATTACK`, both sides still standing | `combat` |
+| `combat` | victory, `MOVE` away, or defeat (respawn at the entrance with 50 HP) | `wounded` |
+| `wounded` | a quest turned in (full heal) | `healthy` |
 
 `STATUS` answers `healthy` (full HP), `wounded` (below 100 HP) or `combat`
 (the last round left both sides standing). Leaving the room ends a fight:
@@ -242,11 +250,18 @@ hold: an item in the inventory (`requires_item`), an NPC beaten
 
 ```mermaid
 stateDiagram-v2
+    direction LR
     [*] --> active: QUEST npc
-    active --> active: QUEST npc, conditions not met (progress shown)
-    active --> completed: QUEST npc, conditions met
+    active --> active: not met
+    active --> completed: met
     completed --> [*]
 ```
+
+| From | When | To |
+|---|---|---|
+| no quest | first `QUEST <npc>` | `active` |
+| `active` | `QUEST <npc>`, conditions not met: progress shown | `active` |
+| `active` | `QUEST <npc>`, conditions met | `completed` |
 
 - **Progression**: conditions are read from the player's state when asked,
   so nothing can drift: `QUESTS` shows `progress: "met/needed"` for each
@@ -342,7 +357,7 @@ blocked.
 Monitoring with `jq`:
 
 ```sh
-tail -f tap_project/tap_server/logs/server.jsonl | jq -c 'select(.level != "INFO")'   # problems only
+tail -f tap_project/tap_server/logs/server.jsonl | jq -c 'select(.level != "INFO")'    # problems only
 jq -c 'select(.event | startswith("abuse_"))' tap_project/tap_server/logs/server.jsonl # abuse
 jq -c 'select(.player == "alice")' tap_project/tap_server/logs/server.jsonl            # one player
 ```
