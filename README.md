@@ -3,7 +3,7 @@
 <h1 align="center">TAP</h1>
 
 <p align="center">
-  <b>T</b>he <b>A</b>nswer <b>P</b>rotocol<br>
+  The Answer Protocol<br>
   <i>a shared-world text adventure over TCP, in Rust</i>
 </p>
 <p align="center">
@@ -15,47 +15,40 @@
 
 ---
 
-## Description
+<h2 align="center" id="description">DESCRIPTION</h2>
 
-### What ?
+### Quick read
 
 A shared-world text adventure: several players explore one dungeon, talk
 to NPCs, pick up items, fight a monster and complete quests together. The
 goal of a game: defeat the monster and take its treasure.
 
-### How ?
-
-RFC 42TAP over TCP: one UTF-8 line per message, commands from the client,
-`OK` or `ERR` replies and asynchronous `EVT` events from the server.
-
-### For ?
-
-Players on a terminal or a window, and any client another group wrote
-against the same RFC.
-
-### Why ?
+### What is behind
 
 - One world, many clients acting at once: it must stay consistent.
-- One written protocol: any client talks to any server that follows it.
+- One written protocol: RFC 42TAP over TCP, where any client talks to any server that follows it.
+- Protocol usage: one UTF-8 line per message, commands from the client,
+`OK` or `ERR` replies and asynchronous `EVT` events from the server.
 
-The repository holds three Rust programs:
+It is played on a terminal (CLI) or in a window (GUI), and by any client
+another group wrote against the same RFC.
 
-| Program | Path | Role |
-|---|---|---|
+| Rust programs | Path | Role |
+|---------------|------|------|
 | Server | `tap_project/tap_server` | world state, rules, protocol, logs |
 | CLI client | `tap_project/tap_client` | type protocol commands, see every line live |
 | GUI client | `tap_project/tap_gui` | egui window: room, inventory, buttons, chat |
 
 ---
 
-## Instructions
+<h2 align="center" id="instructions">INSTRUCTIONS</h2>
 
 Requirements: a Rust toolchain (`rustup`, edition 2024, with `clippy` and
 `rustfmt`) and `make`. The GUI needs the usual X11 or Wayland libraries of
 a Linux desktop.
 
 | I want to | Run |
-|---|---|
+|-----------|-----|
 | fetch the dependencies | `make install` |
 | start the server | `make run-server` |
 | play in a terminal | `make run-client` |
@@ -68,7 +61,7 @@ Details in [Building and Running](#building-and-running).
 
 ---
 
-## Architecture
+<h2 align="center" id="architecture">ARCHITECTURE</h2>
 
 ```mermaid
 flowchart LR
@@ -153,7 +146,7 @@ tap_project/
 
 ---
 
-## Protocol Implementation
+<h2 align="center" id="protocol-implementation">PROTOCOL IMPLEMENTATION</h2>
 
 The server follows RFC 42TAP. Where the RFC is silent or inconsistent, the
 choices below were made.
@@ -200,7 +193,7 @@ S: OK {"attacker_hp": 88, "target_hp": 0, "damage": 15, "status": "victory"}
 
 ---
 
-## Combat System
+<h2 align="center" id="combat-system">COMBAT SYSTEM</h2>
 
 One `ATTACK <npc>` is one full round: the player strikes, then the NPC
 strikes back if it is still standing.
@@ -241,7 +234,7 @@ Every round is broadcast to the room as `EVT ROOM COMBAT`.
 
 ---
 
-## Quest System
+<h2 align="center" id="quest-system">QUEST SYSTEM</h2>
 
 A quest is given by one NPC (`giver`) and is done when its conditions
 hold: an item in the inventory (`requires_item`), an NPC beaten
@@ -274,7 +267,7 @@ stateDiagram-v2
 
 ---
 
-## World Design
+<h2 align="center" id="world-design">WORLD DESIGN</h2>
 
 <!-- review: slidriss -->
 
@@ -321,7 +314,7 @@ flowchart TB
 
 ---
 
-## Server Logging
+<h2 align="center" id="server-logging">SERVER LOGGING</h2>
 
 Every log line is one JSON object (JSON Lines), written to the console and
 appended to `tap_project/tap_server/logs/server.jsonl`:
@@ -356,7 +349,7 @@ jq -c 'select(.player == "alice")' tap_project/tap_server/logs/server.jsonl     
 
 ---
 
-## Group Contributions
+<h2 align="center" id="group-contributions">GROUP CONTRIBUTIONS</h2>
 
 <!-- review: each member checks their own line -->
 
@@ -373,7 +366,7 @@ jq -c 'select(.player == "alice")' tap_project/tap_server/logs/server.jsonl     
 
 ---
 
-## Building and Running
+<h2 align="center" id="building-and-running">BUILDING & RUNNING</h2>
 
 The root `Makefile` drives `cargo` in the three crates:
 
@@ -403,7 +396,7 @@ chat are shown apart.
 
 ---
 
-## Testing
+<h2 align="center" id="testing">TESTING</h2>
 
 **Unit tests**: `make test`. The server tests cover every command module
 without sockets, events with real local sockets, and random campaigns of
@@ -415,7 +408,7 @@ heaviest are `#[ignore]`: `cargo test --release -- --ignored` in
 `nc 127.0.0.1 7878`):
 
 | Client A | Client B sees |
-|---|---|
+|----------|---------------|
 | `CONNECT alice` | `EVT ROOM PRESENCE ENTER alice`, `EVT STATS players=2` |
 | `CHAT GLOBAL hi` | `EVT GLOBAL CHAT alice hi` |
 | `MOVE north` | `EVT ROOM PRESENCE LEAVE alice` |
@@ -445,7 +438,7 @@ defeat and the respawn at the entrance with 50 HP.
 One review run, 2026-10-24, on the code of this README:
 
 | Check | Result |
-|---|---|
+|-------|--------|
 | `make lint` | clean: `rustfmt`, `clippy` with warnings as errors |
 | `make test` | server 64 passed, GUI 20 passed |
 | scenarios above, 3 scripted clients | every reply and event as written here, defeat and respawn excepted: unit tests only |
@@ -459,7 +452,7 @@ was tried.
 
 ---
 
-## Known limits
+<h2 align="center" id="known-limits">KNOWN LIMITS</h2>
 
 - **No persistence.** A restart resets the world and every player.
 - **One lock.** Right for 8 rooms and a few players; a large world would
@@ -470,7 +463,7 @@ was tried.
 
 ---
 
-## Resources
+<h2 align="center" id="resources">RESOURCES</h2>
 
 - RFC 42TAP, attached to the subject: the protocol of record.
 - [The Rust Programming Language](https://doc.rust-lang.org/book/), chapters
@@ -484,27 +477,32 @@ was tried.
 - Howard Hinnant, [chrono-Compatible Low-Level Date Algorithms](https://howardhinnant.github.io/date_algorithms.html),
   for the UTC timestamps of the logs.
 
-### AI usage
 
-<!-- OWED: slidriss and srezzaq add their own part below. -->
+### AI USAGE
 
-**jferone**
+#### By `slidriss`
 
-Written or generated, code carries the same design value: it went through
-the same design work, the same stress tests and the same check against
-the DRAFT tools (FMBOA, BIOPGE) and the GRAIN scale.
+<!-- OWED: slidriss add their own part below. -->
+
+
+#### By `srezzaq`
+
+<!-- OWED: srezzaq add their own part below. -->
+
+
+#### By `jferone`
+
+Self-written or agent-generated, my code carries the same design value, stress tests and the same check against my [DRAFT tools](https://github.com/sayca-jferone/DRAFT).
 
 | Task | AI use |
-|---|---|
-| Requirements | Claude extracted subject v1.4 and RFC 42TAP into the DRAFT FMBOA grid (conditions, specifications, requirements), then challenged hard both the soundness of the subject and jferone's own positions |
-| Game engine (combat, quests, groups, items, world validation, WHO), CHAT and `EVT`, server logging, RFC fixes, Makefile, README | Claude stress-tested every piece of code produced, whether written by hand or generated |
-| Final review, 2026-10-24 | Claude Code replayed the README scenarios against `main`, found that #62 and #63 never reached it and found four defects; it wrote the PR restoring them and the four fixes of #78, under jferone's review |
+|------|--------|
+| Requirements | Claude extracted `subject v1.4` and `RFC 42TAP` into my `DRAFT FMBOA grid` (conditions, specifications, requirements), then challenged hard both the soundness of the subject and our group positions |
+| Game engine | `Claude Hexis` (my own harness enhancement project) helped to stress-test every piece of code produced, whether written by hand or generated. It helped on: combat, quests, groups, items, world validation, WHO, CHAT and `EVT`, server logging, RFC fixes, Makefile, final README conformity check |
+| Final review, 2026-10-24 | `Claude Hexis` replayed the README scenarios against `main`, found that #62 and #63 never reached it and found four defects; it wrote the PR restoring them and the four fixes of #78, under my own review |
 
-**How it is controlled.** Nothing an agent returned was merged before
-jferone reviewed it; every fix came with its test and a replayed scenario.
+**Human-native + AI enhancement:** Nothing an agent returned was merged before I reviewed it. Every fix came with its test and a replayed scenario.
 
-**Attribution.** Every commit is authored by its human author; no commit
-on GitHub carries an AI trailer.
+**Attribution:** Every commit is authored by myself. No commit on GitHub carries an AI trailer, because of my strict supervision.
 
 ---
 
