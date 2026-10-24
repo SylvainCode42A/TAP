@@ -317,15 +317,23 @@ fn main() {
     }
 }
 
-/// Writes `ERR <t_error> <error>` to `stream` and logs it as a WARN.
-/// Never fails: a write error means the client left, which its next read
-/// sees.
-pub fn send_error_mess(stream: &mut TcpStream, t_error: &str, error: &str) {
+/// Writes `ERR <t_error> <error>` to `stream` and logs it as a WARN, with
+/// `player` once connected. Never fails: a write error means the client
+/// left, which its next read sees.
+pub fn send_error_mess(
+    stream: &mut TcpStream,
+    player: &Option<String>,
+    t_error: &str,
+    error: &str,
+) {
     let message = format!("ERR {} {}\n", t_error, error);
     let ip = stream
         .peer_addr()
         .map_or("unknown".to_string(), |peer| peer.to_string());
-    logging::warn("reply", json!({"ip": ip, "reply": message.trim_end()}));
+    logging::warn(
+        "reply",
+        json!({"ip": ip, "player": player, "reply": message.trim_end()}),
+    );
     // A lost client is seen by its next read, which ends the session.
     let _ = stream.write_all(message.as_bytes());
 }
