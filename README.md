@@ -86,6 +86,7 @@ choices below were made.
 | Unknown command, wrong arguments | no code | `ERR 401 Unknown command`, `ERR 401 Invalid number of arguments for <CMD>` | 4xx is non-fatal for every client (RFC 7.3) |
 | Command before `CONNECT` | no code | `ERR 404 Try with first CONNECTED` | same reason |
 | Second `CONNECT` | no code | `ERR 401 <name> already connected, use QUIT first` | same reason |
+| Name in use | `ERR 201 NAME_IN_USE`, case not specified | case-insensitive: `Alice` is refused while `alice` plays | two players must stay distinguishable in `WHO`, chat and events |
 | Line over 1024 bytes | 9.4 recommends a limit | `ERR 401 LINE_TOO_LONG` | RFC 9.4 |
 | Control character in a chat message | 9.2: reject or neutralise | `ERR 401 INVALID_MESSAGE` | relayed as is, an escape sequence would drive other players' terminals |
 | Fixed item (`obtainable: false`) | no code | `ERR 403 ITEM_NOT_OBTAINABLE` | the item stays visible in its room |
