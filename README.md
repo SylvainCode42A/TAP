@@ -451,7 +451,7 @@ One review run, 2026-10-24, on the code of this README:
 | scenarios above, 3 scripted clients | every reply and event as written here, defeat and respawn excepted: unit tests only |
 | logs of that run | 200 lines, each one valid JSON for `jq` |
 | another group's CLI client on our server | every command answered, its events seen by our client |
-| our commands on that group's server | connected; its `LOOK`, `WHO` and `INVENTORY` replies differ from RFC 5.1.2, 5.2.2 and 5.4.3, so our GUI shows no room there |
+| our commands on that group's server | connected; its `LOOK`, `WHO` and `INVENTORY` replies differ from RFC 5.1.2, 5.2.2 and 5.4.3; our GUI reads the RFC `LOOK` shape, so it cannot draw their rooms (read from the code, not yet seen on screen) |
 
 Not claimed: the 3 `#[ignore]` campaigns were not part of this run, the
 GUI was checked by hand only, and no load beyond a burst of 30 commands
