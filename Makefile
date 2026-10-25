@@ -1,7 +1,7 @@
 # TAP build tool, subject VII.1: each target runs cargo in the three crates.
 #
 #   make install          fetch the dependencies of every crate
-#   make run-server       start the server on 127.0.0.1:7878
+#   make run-server       start the server on port 7878
 #   make run-client       start the CLI client  (HOST=... PORT=... to change)
 #   make run-client-gui   start the GUI client  (HOST=... PORT=... to change)
 #   make lint             rustfmt check, then clippy with warnings as errors

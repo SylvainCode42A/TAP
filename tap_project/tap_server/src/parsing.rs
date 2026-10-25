@@ -64,7 +64,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                         "ip": ip, "player": current_username, "bytes": n,
                     }),
                 );
-                send_error_mess(stream, "401", "LINE_TOO_LONG");
+                send_error_mess(stream, &current_username, "401", "LINE_TOO_LONG");
             }
             Ok(_) => {
                 logging::info(
@@ -94,6 +94,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     if let Some(current) = &current_username {
                         send_error_mess(
                             stream,
+                            &current_username,
                             "401",
                             &format!("{} already connected, use QUIT first", current),
                         );
@@ -102,7 +103,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             username: actions[1].to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for CONNECT");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for CONNECT",
+                        );
                     }
                 }
 
@@ -120,7 +126,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             direction: actions[1].to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for MOVE");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for MOVE",
+                        );
                     }
                 }
 
@@ -132,7 +143,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             item: item.to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for TAKE");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for TAKE",
+                        );
                     }
                 }
 
@@ -144,7 +160,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             item: item.to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for DROP");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for DROP",
+                        );
                     }
                 }
 
@@ -161,7 +182,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             npc: item.to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for TALK");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for TALK",
+                        );
                     }
                 }
 
@@ -173,7 +199,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             target: item.to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for ATTACK");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for ATTACK",
+                        );
                     }
                 }
 
@@ -190,7 +221,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             quest_id: item.to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for QUEST");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for QUEST",
+                        );
                     }
                 }
 
@@ -215,6 +251,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     } else {
                         send_error_mess(
                             stream,
+                            &current_username,
                             "401",
                             "Invalid number of arguments for GROUP INVITE",
                         );
@@ -232,6 +269,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     } else {
                         send_error_mess(
                             stream,
+                            &current_username,
                             "401",
                             "Invalid number of arguments for GROUP JOIN",
                         );
@@ -260,6 +298,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     } else {
                         send_error_mess(
                             stream,
+                            &current_username,
                             "401",
                             "Invalid number of arguments for CHAT GLOBAL",
                         );
@@ -276,7 +315,12 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             message: rest.to_string(),
                         });
                     } else {
-                        send_error_mess(stream, "401", "Invalid number of arguments for CHAT ROOM");
+                        send_error_mess(
+                            stream,
+                            &current_username,
+                            "401",
+                            "Invalid number of arguments for CHAT ROOM",
+                        );
                     }
                 }
 
@@ -292,6 +336,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                     } else {
                         send_error_mess(
                             stream,
+                            &current_username,
                             "401",
                             "Invalid number of arguments for CHAT GROUP",
                         );
@@ -305,7 +350,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                 }
 
                 if !matched {
-                    send_error_mess(stream, "401", "Unknown command");
+                    send_error_mess(stream, &current_username, "401", "Unknown command");
                 }
 
                 if let Some(c) = cmd {
@@ -338,7 +383,7 @@ pub fn handle_(stream: &mut TcpStream, game_state: Arc<Mutex<GameState>>) {
                             }
                         }
                         Response::Err { code, message } => {
-                            send_error_mess(stream, &code.to_string(), &message);
+                            send_error_mess(stream, &current_username, &code.to_string(), &message);
                         }
                     }
                 }

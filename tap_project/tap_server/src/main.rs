@@ -1,5 +1,5 @@
 //! TAP server: checks `data/world.yaml`, then serves RFC 42TAP on
-//! 127.0.0.1:7878 with one thread per client.
+//! port 7878 of every interface, with one thread per client.
 //!
 //! This file holds the types every module shares: the world as read from
 //! YAML, the live `GameState`, and the `Command` / `Response` pair that
@@ -24,6 +24,10 @@ mod logging;
 mod parsing;
 mod quest;
 mod world_check;
+
+/// Every interface: clients of other machines, other groups' included,
+/// reach the server.
+const ADDRESS: &str = "0.0.0.0:7878";
 
 /// Room part of a LOOK reply, RFC 5.1.2.
 #[derive(Serialize)]
@@ -262,7 +266,7 @@ fn main() {
         logging::info(
             "server_start",
             json!({
-                "address": "127.0.0.1:7878",
+                "address": ADDRESS,
                 "rooms": data.locations.len(),
                 "items": data.items.len(),
                 "npcs": data.npcs.len(),
@@ -273,7 +277,7 @@ fn main() {
 
     let game_state = Arc::new(Mutex::new(game_state));
 
-    let listener = TcpListener::bind("127.0.0.1:7878").expect("Erreur de bind");
+    let listener = TcpListener::bind(ADDRESS).expect("Erreur de bind");
 
     // Connections per IP in the last seconds, to spot rapid reconnection.
     let mut connections: HashMap<std::net::IpAddr, logging::RateWatch> = HashMap::new();
@@ -313,15 +317,23 @@ fn main() {
     }
 }
 
-/// Writes `ERR <t_error> <error>` to `stream` and logs it as a WARN.
-/// Never fails: a write error means the client left, which its next read
-/// sees.
-pub fn send_error_mess(stream: &mut TcpStream, t_error: &str, error: &str) {
+/// Writes `ERR <t_error> <error>` to `stream` and logs it as a WARN, with
+/// `player` once connected. Never fails: a write error means the client
+/// left, which its next read sees.
+pub fn send_error_mess(
+    stream: &mut TcpStream,
+    player: &Option<String>,
+    t_error: &str,
+    error: &str,
+) {
     let message = format!("ERR {} {}\n", t_error, error);
     let ip = stream
         .peer_addr()
         .map_or("unknown".to_string(), |peer| peer.to_string());
-    logging::warn("reply", json!({"ip": ip, "reply": message.trim_end()}));
+    logging::warn(
+        "reply",
+        json!({"ip": ip, "player": player, "reply": message.trim_end()}),
+    );
     // A lost client is seen by its next read, which ends the session.
     let _ = stream.write_all(message.as_bytes());
 }
