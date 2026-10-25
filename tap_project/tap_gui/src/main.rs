@@ -2,18 +2,26 @@
 //!
 //! - `network`: connection thread, lines from the server to the window
 //! - `protocol`: reading the server replies (RFC 42TAP)
+//! - `events`: reading the `EVT` lines (RFC 6.2)
 //! - `app`: window state, commands sent and replies received
 //! - `replies`: what each server reply changes in the window
+//! - `live`: what each `EVT` line changes in the window
 //! - `images`: pictures of the rooms, built into the program
 //! - `view`: drawing helpers (room, player, counters, buttons)
 //! - `window`: the window layout, one panel per zone
 //! - `log_panel`: the log, coloured by kind of line
+//! - `chat`: the chat panel, apart from the log
+//! - `group_view`: the group zone (our group, invitation, GROUP buttons)
 //! - `map`: the mini-map, built from the exits of each LOOK
 //! - `fade`: the fade-in of the room panel when the room changes
 
 mod app;
+mod chat;
+mod events;
 mod fade;
+mod group_view;
 mod images;
+mod live;
 mod log_panel;
 mod map;
 mod network;
