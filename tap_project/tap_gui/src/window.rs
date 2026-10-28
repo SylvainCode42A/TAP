@@ -38,10 +38,17 @@ impl eframe::App for TapApp {
                 ui.label("Name:");
                 ui.text_edit_singleline(&mut self.name);
                 if ui.button("Connect").clicked() {
-                    commands.push(format!("CONNECT {}", self.name.trim()));
-                    push_refresh(&mut commands);
-                    commands.push("STATUS".to_string());
-                    commands.push("QUESTS".to_string());
+                    // After QUIT or a closed connection, open a new one first.
+                    // If the server cannot be reached, the log already says why.
+                    if self.writer.is_none() {
+                        self.open_connection(ui.ctx());
+                    }
+                    if self.writer.is_some() {
+                        commands.push(format!("CONNECT {}", self.name.trim()));
+                        push_refresh(&mut commands);
+                        commands.push("STATUS".to_string());
+                        commands.push("QUESTS".to_string());
+                    }
                 }
             });
             show_counters(ui, self.room.as_ref(), self.server_players);
