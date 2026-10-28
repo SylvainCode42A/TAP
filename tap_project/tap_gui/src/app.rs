@@ -130,13 +130,26 @@ impl TapApp {
         }
     }
 
+    /// Back to the start screen, as if the window had just opened without a
+    /// connection: the room, map, inventory, quests, group and chat are
+    /// forgotten. Only the log and the typed name are kept.
+    pub fn reset_world(&mut self) {
+        let log = std::mem::take(&mut self.log);
+        let name = std::mem::take(&mut self.name);
+        *self = TapApp {
+            log,
+            name,
+            ..TapApp::empty()
+        };
+    }
+
     /// Handles one line from the server: a reply is matched with the command
     /// it answers, an event updates the window, then the line goes to the log.
     pub fn receive(&mut self, line: String) {
         if line == CONNECTION_CLOSED {
-            // Nothing can be sent anymore: buttons now log "Not connected".
-            self.writer = None;
-            self.pending.clear();
+            // Nothing can be sent anymore: buttons now log "Not connected",
+            // and the window goes back to its start screen.
+            self.reset_world();
         }
         let command = if is_reply(&line) {
             self.pending.pop_front()
@@ -167,5 +180,21 @@ mod tests {
 
         app.send("LOOK");
         assert_eq!(app.log.last().map(String::as_str), Some("Not connected"));
+    }
+
+    #[test]
+    fn closed_connection_goes_back_to_the_start_screen() {
+        let mut app = TapApp::empty();
+        app.name = "alice".to_string();
+        app.inventory = Some(vec!["sword".to_string()]);
+        app.group = Some("g1".to_string());
+        app.log.push("OK bye".to_string());
+        app.receive(CONNECTION_CLOSED.to_string());
+
+        assert!(app.room.is_none());
+        assert!(app.inventory.is_none());
+        assert!(app.group.is_none());
+        assert_eq!(app.name, "alice");
+        assert_eq!(app.log, vec!["OK bye", CONNECTION_CLOSED]);
     }
 }
