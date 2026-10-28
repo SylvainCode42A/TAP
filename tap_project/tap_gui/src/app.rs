@@ -21,6 +21,10 @@ pub struct TapApp {
     pub receiver: Option<Receiver<String>>,
     /// Write side of the connection, None if the connection failed.
     pub writer: Option<TcpStream>,
+    /// Server address given on the command line, kept to connect again.
+    pub host: String,
+    /// Server port given on the command line.
+    pub port: u16,
     /// Every line shown in the log, oldest first.
     pub log: Vec<String>,
     /// Player name typed in the name field.
@@ -60,6 +64,8 @@ pub struct TapApp {
     pub chat_scope: String,
     /// Message typed in the chat field.
     pub chat_input: String,
+    /// Item name or id typed in the item field, for TAKE / DROP.
+    pub item_input: String,
 }
 
 impl TapApp {
@@ -68,6 +74,8 @@ impl TapApp {
         TapApp {
             receiver: None,
             writer: None,
+            host: String::new(),
+            port: 0,
             log: vec![],
             name: String::new(),
             room: None,
@@ -87,29 +95,39 @@ impl TapApp {
             chat: vec![],
             chat_scope: "GLOBAL".to_string(),
             chat_input: String::new(),
+            item_input: String::new(),
         }
     }
 
-    /// Connects to the server and starts the network thread.
+    /// Opens the window and connects to the server at `host:port`.
     pub fn new(ctx: &egui::Context, host: &str, port: u16) -> TapApp {
         let mut app = TapApp::empty();
-        let stream = match TcpStream::connect((host, port)) {
+        app.host = host.to_string();
+        app.port = port;
+        app.open_connection(ctx);
+        app
+    }
+
+    /// Connects to the server and starts the network thread. Called when the
+    /// window opens, and again by Connect after the connection was closed.
+    pub fn open_connection(&mut self, ctx: &egui::Context) {
+        let (host, port) = (self.host.clone(), self.port);
+        let stream = match TcpStream::connect((host.as_str(), port)) {
             Ok(s) => s,
             Err(e) => {
-                app.log
+                self.log
                     .push(format!("Connection to {host}:{port} failed: {e}"));
-                return app;
+                return;
             }
         };
         match stream.try_clone() {
             Ok(reader_stream) => {
-                app.receiver = Some(spawn_reader(reader_stream, ctx.clone()));
-                app.writer = Some(stream);
-                app.log.push(format!("Connected to {host}:{port}"));
+                self.receiver = Some(spawn_reader(reader_stream, ctx.clone()));
+                self.writer = Some(stream);
+                self.log.push(format!("Connected to {host}:{port}"));
             }
-            Err(e) => app.log.push(format!("Cannot clone connection: {e}")),
+            Err(e) => self.log.push(format!("Cannot clone connection: {e}")),
         }
-        app
     }
 
     /// Sends one command to the server, ending with `\n`, and shows it in the log.
@@ -127,13 +145,29 @@ impl TapApp {
         }
     }
 
+    /// Back to the start screen, as if the window had just opened without a
+    /// connection: the room, map, inventory, quests, group and chat are
+    /// forgotten. Only the log, the typed name and the server address are kept.
+    pub fn reset_world(&mut self) {
+        let log = std::mem::take(&mut self.log);
+        let name = std::mem::take(&mut self.name);
+        let host = std::mem::take(&mut self.host);
+        *self = TapApp {
+            log,
+            name,
+            host,
+            port: self.port,
+            ..TapApp::empty()
+        };
+    }
+
     /// Handles one line from the server: a reply is matched with the command
     /// it answers, an event updates the window, then the line goes to the log.
     pub fn receive(&mut self, line: String) {
         if line == CONNECTION_CLOSED {
-            // Nothing can be sent anymore: buttons now log "Not connected".
-            self.writer = None;
-            self.pending.clear();
+            // Nothing can be sent anymore: buttons now log "Not connected",
+            // and the window goes back to its start screen.
+            self.reset_world();
         }
         let command = if is_reply(&line) {
             self.pending.pop_front()
@@ -164,5 +198,24 @@ mod tests {
 
         app.send("LOOK");
         assert_eq!(app.log.last().map(String::as_str), Some("Not connected"));
+    }
+
+    #[test]
+    fn closed_connection_goes_back_to_the_start_screen() {
+        let mut app = TapApp::empty();
+        app.name = "alice".to_string();
+        app.host = "127.0.0.1".to_string();
+        app.port = 7878;
+        app.inventory = Some(vec!["sword".to_string()]);
+        app.group = Some("g1".to_string());
+        app.log.push("OK bye".to_string());
+        app.receive(CONNECTION_CLOSED.to_string());
+
+        assert!(app.room.is_none());
+        assert!(app.inventory.is_none());
+        assert!(app.group.is_none());
+        assert_eq!(app.name, "alice");
+        assert_eq!((app.host.as_str(), app.port), ("127.0.0.1", 7878));
+        assert_eq!(app.log, vec!["OK bye", CONNECTION_CLOSED]);
     }
 }
