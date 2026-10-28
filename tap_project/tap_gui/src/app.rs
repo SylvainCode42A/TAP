@@ -60,6 +60,8 @@ pub struct TapApp {
     pub chat_scope: String,
     /// Message typed in the chat field.
     pub chat_input: String,
+    /// Item name or id typed in the item field, for TAKE / DROP.
+    pub item_input: String,
 }
 
 impl TapApp {
@@ -87,6 +89,7 @@ impl TapApp {
             chat: vec![],
             chat_scope: "GLOBAL".to_string(),
             chat_input: String::new(),
+            item_input: String::new(),
         }
     }
 
