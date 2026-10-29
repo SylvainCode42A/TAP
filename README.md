@@ -374,7 +374,7 @@ jq -c 'select(.player == "alice")' tap_project/tap_server/logs/server.jsonl     
 | | protocol | parsing into `Command`, dispatcher, case-insensitive commands, RFC error codes, LOOK JSON |
 | | world | world data, room pictures |
 | **srezzaq** | CLI client | the whole client |
-| | GUI client | egui: room view, inventory, action buttons, counters, NPC dialogue, health bar, quests, chat view, minimap |
+| | GUI client | egui: room view with pictures and icons, inventory, action buttons, items by name or id, counters, NPC dialogue, health bar, quests, minimap, live updates from `EVT`, chat view, group invitations, reconnection |
 | **jferone** | game engine | combat, quests, groups, items, world validation, WHO |
 | | events | CHAT and every `EVT` |
 | | operations | server logging, RFC conformance fixes, Makefile, README assembly |
@@ -400,14 +400,25 @@ The root `Makefile` drives `cargo` in the three crates:
 Without `make`: `cd tap_project/tap_server && cargo run`, and
 `cargo run -- [host] [port]` in `tap_client` or `tap_gui`.
 
-**CLI client** <!-- review: srezzaq -->: commands are typed exactly as the
-protocol spells them (`MOVE north`, `CHAT ROOM hello`). A reader thread
-prints every server line as it arrives, so events show up while the
-player is typing.
+**CLI client**: commands are typed exactly as the protocol spells them
+(`MOVE north`, `CHAT ROOM hello`); an empty line is not sent. A reader
+thread prints every server line as it arrives, so events show up while
+the player is typing. When the server closes the connection (after
+`QUIT`, for example), the client prints `Connection closed` and exits;
+Ctrl-D closes it from the client side.
 
-**GUI client** <!-- review: srezzaq -->: enter a name and press Connect;
-the room, the inventory and the actions are buttons; the log and the
-chat are shown apart.
+**GUI client**: enter a name and press Connect; if the server cannot be
+reached, nothing is sent and Connect can be pressed again. The room
+picture, the exits, the items, the NPCs and the inventory are shown with
+buttons, and each item and NPC of our world has its icon; an item can
+also be typed by its name or its id for `TAKE` and `DROP`. A mini-map
+draws every room seen so far, from the exits of each `LOOK`. The `EVT`
+lines update the window live: players in the room, player count, group,
+chat. A group invitation shows Join and Ignore buttons. The health bar
+and the quests come from the `STATUS` and `QUESTS` replies. The log and
+the chat (global, room, group) are shown apart. After `QUIT` or a lost
+connection, the window goes back to the start screen, ready to connect
+again.
 
 ---
 
@@ -503,7 +514,8 @@ group's server, and no load beyond a burst of 30 commands was tried.
 
 #### By `srezzaq`
 
-<!-- OWED: srezzaq add their own part below. -->
+I used AI to learn Rust, to understand the concepts of the
+subject and to test my code.
 
 
 #### By `jferone`
