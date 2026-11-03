@@ -35,6 +35,26 @@ impl eframe::App for TapApp {
             ui.horizontal(|ui| {
                 ui.heading("TAP");
                 ui.separator();
+                // The server: editable while disconnected, fixed and in bold
+                // while connected, so the address in use is always visible.
+                ui.label("Server:");
+                if self.is_connected() {
+                    let address = format!("{}:{}", self.host, self.port);
+                    ui.label(egui::RichText::new(address).strong());
+                } else {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.host)
+                            .hint_text("host")
+                            .desired_width(120.0),
+                    );
+                    ui.label(":");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.port)
+                            .hint_text("port")
+                            .desired_width(48.0),
+                    );
+                }
+                ui.separator();
                 ui.label("Name:");
                 ui.text_edit_singleline(&mut self.name);
                 if ui.button("Connect").clicked() {
@@ -50,6 +70,12 @@ impl eframe::App for TapApp {
                         commands.push("QUESTS".to_string());
                     }
                 }
+                // QUIT ends the connection only: the window stays open and
+                // goes back to its start screen, so it sits next to Connect.
+                let quit = ui.add_enabled(self.is_connected(), egui::Button::new("QUIT"));
+                if quit.clicked() {
+                    commands.push("QUIT".to_string());
+                }
             });
             show_counters(ui, self.room.as_ref(), self.server_players);
         });
@@ -58,7 +84,7 @@ impl eframe::App for TapApp {
         egui::Panel::bottom("actions").show(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                for command in ["LOOK", "INVENTORY", "STATUS", "QUESTS", "WHO", "QUIT"] {
+                for command in ["LOOK", "INVENTORY", "STATUS", "QUESTS", "WHO"] {
                     if ui.button(command).clicked() {
                         commands.push(command.to_string());
                     }
