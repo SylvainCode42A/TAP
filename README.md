@@ -420,7 +420,9 @@ also be typed by its name or its id for `TAKE` and `DROP`. A mini-map
 draws every room seen so far, from the exits of each `LOOK`. The `EVT`
 lines update the window live: players in the room, player count, group,
 chat. A group invitation shows Join and Ignore buttons. The health bar
-and the quests come from the `STATUS` and `QUESTS` replies. The log and
+and the quests come from the `STATUS` and `QUESTS` replies. In the player
+panel, the quests, the map and the inventory are boxes that a click on
+their title folds or unfolds. The log and
 the chat (global, room, group) are shown apart. After `QUIT` or a lost
 connection, the window goes back to the start screen, ready to connect
 again, to the same server or to another one.

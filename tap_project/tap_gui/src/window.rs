@@ -9,8 +9,17 @@ use crate::item_view::show_item_field;
 use crate::log_panel::show_log;
 use crate::map::show_map;
 use crate::view::{
-    push_refresh, show_character, show_counters, show_dialogue, show_inventory, show_room,
+    push_refresh, show_character, show_counters, show_dialogue, show_inventory, show_quests,
+    show_room,
 };
+
+/// A box of the player panel with a bold title, open at start; a click on
+/// the title folds or unfolds it.
+fn collapsing_box(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    egui::CollapsingHeader::new(egui::RichText::new(title).strong())
+        .default_open(true)
+        .show(ui, add_contents);
+}
 
 impl eframe::App for TapApp {
     /// Called on every frame: draws the whole window from the current state.
@@ -99,21 +108,23 @@ impl eframe::App for TapApp {
         egui::Panel::left("player")
             .default_size(260.0)
             .show(ui, |ui| {
-                ui.heading("Player");
-                show_character(
-                    ui,
-                    self.health.as_ref(),
-                    self.last_attack.as_ref(),
-                    &self.quests,
-                );
-                show_group_name(ui, self.group.as_deref(), self.group_news.as_deref());
-                show_invite(ui, &mut self.invite, &mut commands);
-                ui.separator();
-                ui.strong("Map");
-                show_map(ui, &self.map);
-                ui.separator();
-                show_inventory(ui, self.inventory.as_deref(), &mut commands);
-                show_item_field(ui, &mut self.item_input, &mut commands);
+                // With every box open on a small window, the panel scrolls.
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.heading("Player");
+                    show_character(ui, self.health.as_ref(), self.last_attack.as_ref());
+                    show_group_name(ui, self.group.as_deref(), self.group_news.as_deref());
+                    show_invite(ui, &mut self.invite, &mut commands);
+                    // Each box can be folded by a click on its title.
+                    ui.separator();
+                    collapsing_box(ui, "Quests", |ui| show_quests(ui, &self.quests));
+                    ui.separator();
+                    collapsing_box(ui, "Map", |ui| show_map(ui, &self.map));
+                    ui.separator();
+                    collapsing_box(ui, "Inventory", |ui| {
+                        show_inventory(ui, self.inventory.as_deref(), &mut commands);
+                        show_item_field(ui, &mut self.item_input, &mut commands);
+                    });
+                });
             });
 
         // Right: the chat, then every line sent and received, coloured by kind.
