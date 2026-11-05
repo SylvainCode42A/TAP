@@ -21,10 +21,10 @@ pub struct TapApp {
     pub receiver: Option<Receiver<String>>,
     /// Write side of the connection, None if the connection failed.
     pub writer: Option<TcpStream>,
-    /// Server address given on the command line, kept to connect again.
+    /// Server address typed in the top bar, first given on the command line.
     pub host: String,
-    /// Server port given on the command line.
-    pub port: u16,
+    /// Server port typed in the top bar, checked when Connect is pressed.
+    pub port: String,
     /// Every line shown in the log, oldest first.
     pub log: Vec<String>,
     /// Player name typed in the name field.
@@ -75,7 +75,7 @@ impl TapApp {
             receiver: None,
             writer: None,
             host: String::new(),
-            port: 0,
+            port: String::new(),
             log: vec![],
             name: String::new(),
             room: None,
@@ -103,15 +103,42 @@ impl TapApp {
     pub fn new(ctx: &egui::Context, host: &str, port: u16) -> TapApp {
         let mut app = TapApp::empty();
         app.host = host.to_string();
-        app.port = port;
+        app.port = port.to_string();
         app.open_connection(ctx);
         app
     }
 
-    /// Connects to the server and starts the network thread. Called when the
-    /// window opens, and again by Connect after the connection was closed.
+    /// True while a connection is open: the server address cannot be edited.
+    pub fn is_connected(&self) -> bool {
+        self.writer.is_some()
+    }
+
+    /// The typed server address, or why it cannot be used.
+    pub fn server_address(&self) -> Result<(String, u16), String> {
+        let host = self.host.trim();
+        if host.is_empty() {
+            return Err("Server address is empty".to_string());
+        }
+        let port = self.port.trim();
+        match port.parse::<u16>() {
+            Ok(n) if n > 0 => Ok((host.to_string(), n)),
+            _ => Err(format!("Invalid port: {port:?} (1 to 65535)")),
+        }
+    }
+
+    /// Connects to the typed server and starts the network thread. Called
+    /// when the window opens, and again by Connect after the connection closed.
     pub fn open_connection(&mut self, ctx: &egui::Context) {
-        let (host, port) = (self.host.clone(), self.port);
+        let (host, port) = match self.server_address() {
+            Ok(address) => address,
+            Err(e) => {
+                self.log.push(e);
+                return;
+            }
+        };
+        // Shown in bold while connected: the address actually used.
+        self.host = host.clone();
+        self.port = port.to_string();
         let stream = match TcpStream::connect((host.as_str(), port)) {
             Ok(s) => s,
             Err(e) => {
@@ -152,11 +179,12 @@ impl TapApp {
         let log = std::mem::take(&mut self.log);
         let name = std::mem::take(&mut self.name);
         let host = std::mem::take(&mut self.host);
+        let port = std::mem::take(&mut self.port);
         *self = TapApp {
             log,
             name,
             host,
-            port: self.port,
+            port,
             ..TapApp::empty()
         };
     }
@@ -205,7 +233,7 @@ mod tests {
         let mut app = TapApp::empty();
         app.name = "alice".to_string();
         app.host = "127.0.0.1".to_string();
-        app.port = 7878;
+        app.port = "7878".to_string();
         app.inventory = Some(vec!["sword".to_string()]);
         app.group = Some("g1".to_string());
         app.log.push("OK bye".to_string());
@@ -214,8 +242,69 @@ mod tests {
         assert!(app.room.is_none());
         assert!(app.inventory.is_none());
         assert!(app.group.is_none());
+        assert!(!app.is_connected());
         assert_eq!(app.name, "alice");
-        assert_eq!((app.host.as_str(), app.port), ("127.0.0.1", 7878));
+        assert_eq!(
+            (app.host.as_str(), app.port.as_str()),
+            ("127.0.0.1", "7878")
+        );
         assert_eq!(app.log, vec!["OK bye", CONNECTION_CLOSED]);
+    }
+
+    fn with_address(host: &str, port: &str) -> TapApp {
+        let mut app = TapApp::empty();
+        app.host = host.to_string();
+        app.port = port.to_string();
+        app
+    }
+
+    #[test]
+    fn typed_address_is_trimmed() {
+        let app = with_address("  10.0.0.5 ", " 4242 ");
+        assert_eq!(app.server_address(), Ok(("10.0.0.5".to_string(), 4242)));
+    }
+
+    #[test]
+    fn bad_typed_address_is_refused() {
+        for (host, port) in [
+            ("", "7878"),
+            ("   ", "7878"),
+            ("127.0.0.1", ""),
+            ("127.0.0.1", "0"),
+            ("127.0.0.1", "65536"),
+            ("127.0.0.1", "-1"),
+            ("127.0.0.1", "78a"),
+        ] {
+            assert!(
+                with_address(host, port).server_address().is_err(),
+                "{host:?}:{port:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bad_typed_address_does_not_connect() {
+        let mut app = with_address("127.0.0.1", "nope");
+        app.open_connection(&egui::Context::default());
+        assert!(!app.is_connected());
+        assert_eq!(app.log.len(), 1);
+        assert!(app.log[0].starts_with("Invalid port"));
+    }
+
+    #[test]
+    fn connect_switches_to_the_typed_server() {
+        // A real local server on a free port: the window connects to the
+        // typed address, not to the one given on the command line.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut app = with_address(" 127.0.0.1 ", &format!(" {port} "));
+        app.open_connection(&egui::Context::default());
+
+        assert!(app.is_connected());
+        assert_eq!(
+            (app.host.as_str(), app.port.clone()),
+            ("127.0.0.1", port.to_string())
+        );
+        assert_eq!(app.log, vec![format!("Connected to 127.0.0.1:{port}")]);
     }
 }

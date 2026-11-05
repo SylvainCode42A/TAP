@@ -54,7 +54,7 @@ a Linux desktop.
 | play in a terminal | `make run-client` |
 | play in a window | `make run-client-gui` |
 | play with no client at all | `nc 127.0.0.1 7878` |
-| join a server on another machine | `make run-client HOST=<ip>` or `make run-client-gui HOST=<ip>` |
+| join a server on another machine | `make run-client HOST=<ip>` or `make run-client-gui HOST=<ip>`, or type it in the GUI top bar |
 | check the code | `make test`, then `make lint` |
 
 Details in [Building and Running](#building-and-running).
@@ -391,7 +391,7 @@ The root `Makefile` drives `cargo` in the three crates:
 | `make build` | build the three programs |
 | `make run-server` | start the server on port 7878 of every interface, from `tap_project/tap_server` where `data/world.yaml` and `logs/` live |
 | `make run-client` | start the CLI client; `make run-client HOST=10.0.0.5 PORT=7878` for another server |
-| `make run-client-gui` | start the GUI client; same `HOST` and `PORT` |
+| `make run-client-gui` | start the GUI client; same `HOST` and `PORT`, which can then be changed in the window |
 | `make test` | run every unit test |
 | `make lint` | `cargo fmt --check`, then `cargo clippy` with warnings as errors |
 | `make format` | format the three crates |
@@ -407,18 +407,25 @@ the player is typing. When the server closes the connection (after
 `QUIT`, for example), the client prints `Connection closed` and exits;
 Ctrl-D closes it from the client side.
 
-**GUI client**: enter a name and press Connect; if the server cannot be
-reached, nothing is sent and Connect can be pressed again. The room
+**GUI client**: the top bar holds the server address, the name, Connect
+and `QUIT`; `QUIT` only ends the connection, the window stays open.
+The address starts from `[host] [port]` (or `HOST` and `PORT`)
+and can be edited while disconnected; while connected it is shown in
+bold and cannot be changed. Enter a name and press Connect; if the
+address is invalid or the server cannot be reached, nothing is sent,
+the log says why, and Connect can be pressed again. The room
 picture, the exits, the items, the NPCs and the inventory are shown with
 buttons, and each item and NPC of our world has its icon; an item can
 also be typed by its name or its id for `TAKE` and `DROP`. A mini-map
 draws every room seen so far, from the exits of each `LOOK`. The `EVT`
 lines update the window live: players in the room, player count, group,
 chat. A group invitation shows Join and Ignore buttons. The health bar
-and the quests come from the `STATUS` and `QUESTS` replies. The log and
+and the quests come from the `STATUS` and `QUESTS` replies. In the player
+panel, the quests, the map and the inventory are boxes that a click on
+their title folds or unfolds. The log and
 the chat (global, room, group) are shown apart. After `QUIT` or a lost
 connection, the window goes back to the start screen, ready to connect
-again.
+again, to the same server or to another one.
 
 ---
 

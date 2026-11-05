@@ -121,10 +121,10 @@ pub fn show_room(ui: &mut egui::Ui, look: &Look, commands: &mut Vec<String>) {
     }
 }
 
-/// Draws the inventory, one Drop button per item.
+/// Draws the inventory, one Drop button per item. Its title is the
+/// collapsing header in `window.rs`.
 /// Shows `?` before the first INVENTORY reply and `-` when it is empty.
 pub fn show_inventory(ui: &mut egui::Ui, inventory: Option<&[String]>, commands: &mut Vec<String>) {
-    ui.strong("Inventory");
     match inventory {
         None => {
             ui.label("?");
@@ -155,12 +155,11 @@ pub fn show_dialogue(ui: &mut egui::Ui, npc: &str, text: &str) {
     });
 }
 
-/// Draws the player panel: health bar, last attack and known quests.
+/// Draws the player panel: health bar and last attack.
 pub fn show_character(
     ui: &mut egui::Ui,
     health: Option<&Health>,
     last_attack: Option<&(String, AttackResult)>,
-    quests: &[QuestInfo],
 ) {
     ui.horizontal(|ui| {
         ui.label("HP:");
@@ -189,21 +188,37 @@ pub fn show_character(
             result.status
         ));
     }
+}
+
+/// State of a quest, with its progress when the server gives one:
+/// `active (0/2)`.
+fn quest_state(quest: &QuestInfo) -> String {
+    if quest.progress.is_empty() {
+        quest.status.clone()
+    } else {
+        format!("{} ({})", quest.status, quest.progress)
+    }
+}
+
+/// Draws the known quests, one block each: the name in bold with its
+/// state, then the description and the reward. Its title is the
+/// collapsing header in `window.rs`.
+pub fn show_quests(ui: &mut egui::Ui, quests: &[QuestInfo]) {
     if quests.is_empty() {
-        ui.label("Quests: -");
+        ui.label("-");
     }
     for quest in quests {
-        let mut text = format!("Quest {}: {}", display_name(&quest.quest_id), quest.status);
-        if !quest.progress.is_empty() {
-            text.push_str(&format!(" ({})", quest.progress));
-        }
+        ui.horizontal_wrapped(|ui| {
+            ui.strong(display_name(&quest.quest_id));
+            ui.label(quest_state(quest));
+        });
         if !quest.description.is_empty() {
-            text.push_str(&format!(" - {}", quest.description));
+            ui.label(&quest.description);
         }
         if !quest.reward.is_empty() {
-            text.push_str(&format!(" Reward: {}.", quest.reward));
+            ui.weak(format!("Reward: {}", quest.reward));
         }
-        ui.label(text);
+        ui.add_space(4.0);
     }
 }
 
@@ -236,6 +251,20 @@ mod tests {
         assert_eq!(display_name("torch"), "Torch");
         assert_eq!(display_name("cell_key"), "Cell Key");
         assert_eq!(display_name("npc.old_merchant"), "Old Merchant");
+    }
+
+    #[test]
+    fn quest_state_shows_progress_when_known() {
+        let mut quest = QuestInfo {
+            quest_id: "treasure_quest".to_string(),
+            description: String::new(),
+            reward: String::new(),
+            status: "active".to_string(),
+            progress: "0/2".to_string(),
+        };
+        assert_eq!(quest_state(&quest), "active (0/2)");
+        quest.progress.clear();
+        assert_eq!(quest_state(&quest), "active");
     }
 
     #[test]
