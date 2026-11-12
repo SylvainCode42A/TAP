@@ -514,8 +514,8 @@ group's server, and no load beyond a burst of 30 commands was tried.
 
 #### By `slidriss`
 
-I used AI to learn Rust, Arc<Mutex> and TcpListener to understand the concepts of the
-subject and to test my code.
+I used AI to learn Rust, `Arc<Mutex>` and `TcpListener`, to understand the
+concepts of the subject and to test my code.
 
 
 #### By `srezzaq`
