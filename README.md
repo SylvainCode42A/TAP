@@ -284,8 +284,6 @@ stateDiagram-v2
 
 <h2 align="center" id="world-design">WORLD DESIGN</h2>
 
-<!-- review: slidriss -->
-
 Eight rooms: a loop of six, plus two dead ends. Room pictures for the
 GUI are in `tap_project/tap_client/assets`.
 
@@ -516,7 +514,8 @@ group's server, and no load beyond a burst of 30 commands was tried.
 
 #### By `slidriss`
 
-<!-- OWED: slidriss add their own part below. -->
+I used AI to learn Rust, Arc<Mutex> and TcpListener to understand the concepts of the
+subject and to test my code.
 
 
 #### By `srezzaq`
